@@ -1,3 +1,4 @@
+// app/admin/[slug]/page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
 
 export default async function AdminHome(props: {
@@ -22,9 +23,12 @@ export default async function AdminHome(props: {
   if (!client) return <div className="p-8">Client not found</div>;
 
   const adminBase = `/admin/${client.slug}`;
+
   const settingsUrl = `${adminBase}/settings?key=${encodeURIComponent(key)}`;
   const servicesUrl = `${adminBase}/services?key=${encodeURIComponent(key)}`;
   const galleryUrl = `${adminBase}/gallery?key=${encodeURIComponent(key)}`;
+  const reviewsUrl = `${adminBase}/reviews?key=${encodeURIComponent(key)}`; // ✅ NEW
+
   const publicUrl = `/${client.slug}`;
 
   return (
@@ -63,6 +67,17 @@ export default async function AdminHome(props: {
             🖼️ Gallery
             <div className="text-sm opacity-80 font-normal">
               снимки, подредба, showcase
+            </div>
+          </a>
+
+          {/* ✅ NEW: Reviews */}
+          <a
+            className="px-5 py-4 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
+            href={reviewsUrl}
+          >
+            ⭐ Reviews
+            <div className="text-sm opacity-80 font-normal">
+              клиентски отзиви
             </div>
           </a>
 

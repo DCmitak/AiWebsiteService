@@ -6,68 +6,19 @@ import { createClient } from "@supabase/supabase-js";
 import LuxeTheme from "./themes/Luxe";
 import MinimalTheme from "./themes/Minimal";
 
+import type {
+  Service,
+  Review,
+  GalleryImage,
+  SiteSettings,
+  PublicClient,
+  PublicPayload,
+} from "./types";
+
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
-
-export type Service = {
-  id: string;
-  category: string | null;
-  name: string;
-  description: string | null;
-  duration_min: number | null;
-  price_from: number | null;
-  sort_order: number | null;
-};
-
-export type Review = {
-  id: string;
-  author: string;
-  rating: number;
-  text: string;
-};
-
-export type GalleryImage = {
-  id: string;
-  image_url: string;
-  sort_order: number | null;
-};
-
-export type SiteSettings = {
-  client_id: string;
-  theme_preset?: "luxe" | "minimal" | string | null;
-  primary_color?: string | null;
-  hero_image_url?: string | null;
-  booking_url?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  working_hours?: string | null;
-  tagline?: string | null;
-  about_text?: string | null;
-  google_maps_url?: string | null;
-  brands?: unknown;
-  facebook_url?: string | null;
-  instagram_url?: string | null;
-  tiktok_url?: string | null;
-  youtube_url?: string | null;
-};
-
-export type PublicClient = {
-  id: string;
-  slug: string;
-  business_name: string;
-  city: string;
-  is_active: boolean;
-};
-
-export type PublicPayload = {
-  client: PublicClient;
-  settings: SiteSettings | null;
-  services: Service[];
-  gallery: GalleryImage[];
-  reviews: Review[];
-};
 
 export default async function PublicClientPage(props: {
   params: Promise<{ slug: string }>;
@@ -104,7 +55,7 @@ export default async function PublicClientPage(props: {
         .select("id,author,rating,text,created_at")
         .eq("client_id", client.id)
         .order("created_at", { ascending: false })
-        .limit(6)
+        .limit(12)
         .returns<Review[]>(),
     ]);
 

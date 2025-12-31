@@ -1,34 +1,8 @@
+// app/[slug]/themes/Luxe.tsx
 import ServicesTabs from "../ServicesTabs";
+import type { PublicPayload, Review, Service } from "../types";
 
-type Service = {
-  id: string;
-  category: string | null;
-  name: string;
-  description: string | null;
-  duration_min: number | null;
-  price_from: number | null;
-};
-
-type Review = {
-  id: string;
-  author: string;
-  rating: number;
-  text: string;
-};
-
-export default function LuxeTheme({
-  client,
-  settings,
-  services,
-  gallery,
-  reviews,
-}: {
-  client: { id: string; business_name: string; city: string; slug: string };
-  settings: any;
-  services: Service[];
-  gallery: any[];
-  reviews: Review[];
-}) {
+export default function LuxeTheme({ client, settings, services, gallery, reviews }: PublicPayload) {
   const primary = settings?.primary_color || "#dca263";
   const hero = settings?.hero_image_url || "";
   const booking = settings?.booking_url || "#";
@@ -38,7 +12,7 @@ export default function LuxeTheme({
   const tagline = settings?.tagline || "";
   const about = settings?.about_text || "";
   const mapUrl = settings?.google_maps_url || "";
-  const brands: string[] = Array.isArray(settings?.brands) ? settings.brands : [];
+  const brands: string[] = Array.isArray(settings?.brands) ? (settings.brands as string[]) : [];
 
   const facebook = settings?.facebook_url || "";
   const instagram = settings?.instagram_url || "";
@@ -308,7 +282,7 @@ export default function LuxeTheme({
         </div>
 
         <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-3">
-          {(gallery || []).slice(0, 9).map((img: any) => (
+          {(gallery || []).slice(0, 9).map((img) => (
             <div
               key={img.id}
               className="rounded-3xl overflow-hidden border border-black/10 bg-white shadow-sm hover:shadow-md transition"
@@ -451,8 +425,12 @@ export default function LuxeTheme({
 
       <footer className="border-t border-black/5 py-10 bg-white/60 backdrop-blur">
         <div className={cx(siteContainer, "flex items-center justify-between flex-wrap gap-3 text-sm text-black/60")}>
-          <div>© {new Date().getFullYear()} {client.business_name}</div>
-          <a href="#services" className="underline">Услуги</a>
+          <div>
+            © {new Date().getFullYear()} {client.business_name}
+          </div>
+          <a href="#services" className="underline">
+            Услуги
+          </a>
         </div>
       </footer>
 
@@ -501,7 +479,14 @@ function Stars({ count, primary }: { count: number; primary: string }) {
   return (
     <div className="flex gap-1" aria-label={`${count} stars`}>
       {stars.map((on, i) => (
-        <svg key={i} width="16" height="16" viewBox="0 0 24 24" fill={on ? primary : "none"} xmlns="http://www.w3.org/2000/svg">
+        <svg
+          key={i}
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill={on ? primary : "none"}
+          xmlns="http://www.w3.org/2000/svg"
+        >
           <path
             d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2z"
             stroke={on ? primary : "rgba(0,0,0,0.25)"}
@@ -566,7 +551,11 @@ function SocialIcon({
             stroke="currentColor"
             strokeWidth="1.7"
           />
-          <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" stroke="currentColor" strokeWidth="1.7" />
+          <path
+            d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"
+            stroke="currentColor"
+            strokeWidth="1.7"
+          />
           <path d="M17 7.2h.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
       )}
@@ -579,7 +568,13 @@ function SocialIcon({
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <path d="M14 3c.6 2.7 2.3 4.3 5 4.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M14 3c.6 2.7 2.3 4.3 5 4.6"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       )}
       {kind === "youtube" && (
@@ -598,7 +593,22 @@ function SocialIcon({
 }
 
 const demoReviews: Review[] = [
-  { id: "d1", author: "Мария П.", rating: 5, text: "Най-добрият гел лак, който съм имала. Чисто, стилно и много внимателно отношение." },
-  { id: "d2", author: "Елица Н.", rating: 5, text: "Перфектна форма и детайл. Атмосферата е спокойна и луксозна." },
-  { id: "d3", author: "Деси К.", rating: 5, text: "Запазих час лесно, обслужването беше на ниво. Препоръчвам с две ръце." },
+  {
+    id: "d1",
+    author: "Мария П.",
+    rating: 5,
+    text: "Най-добрият гел лак, който съм имала. Чисто, стилно и много внимателно отношение.",
+  },
+  {
+    id: "d2",
+    author: "Елица Н.",
+    rating: 5,
+    text: "Перфектна форма и детайл. Атмосферата е спокойна и луксозна.",
+  },
+  {
+    id: "d3",
+    author: "Деси К.",
+    rating: 5,
+    text: "Запазих час лесно, обслужването беше на ниво. Препоръчвам с две ръце.",
+  },
 ];

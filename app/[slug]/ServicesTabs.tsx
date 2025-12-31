@@ -1,15 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-
-type Service = {
-  id: string;
-  category: string | null;
-  name: string;
-  description: string | null;
-  duration_min: number | null;
-  price_from: number | null;
-};
+import type { Service } from "./types";
 
 export default function ServicesTabs({
   services,
