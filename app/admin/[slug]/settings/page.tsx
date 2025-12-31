@@ -126,11 +126,17 @@ export default async function AdminSettings(props: {
           <input type="hidden" name="client_id" value={client.id} />
 
           <Card title="Theme">
-            <Field
-              name="theme_preset"
-              label='Theme preset (NOT NULL) — пример: "luxe"'
-              defaultValue={settings?.theme_preset || "luxe"}
-            />
+            <label className="block space-y-1">
+            <div className="text-sm text-gray-600">Theme preset</div>
+            <select
+                name="theme_preset"
+                defaultValue={settings?.theme_preset || "luxe"}
+                className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900"
+            >
+                <option value="luxe">Luxe (женствен/лукс)</option>
+                <option value="minimal">Minimal (чист/универсален)</option>
+            </select>
+            </label>
           </Card>
 
           <Card title="Основни">
