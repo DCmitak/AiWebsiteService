@@ -64,9 +64,9 @@ export default function MinimalTheme({
   const grouped = groupServicesByCategory(svc);
 
   // Hero copy from admin (optional)
-  const categoryLabel = settings?.category_label || "МАНИКЮР И ПЕДИКЮР";
-  const heroTitle = settings?.hero_title || "";
-  const heroSubtitle = settings?.hero_subtitle || "";
+  const heroTitle = (settings?.hero_title || "").trim();
+  const heroSubtitle = (settings?.hero_subtitle || "").trim();
+  const categoryLabel = (settings?.category_label || "").trim() || "МАНИКЮР И ПЕДИКЮР";
   const heroFeatures = Array.isArray(settings?.hero_features) ? settings!.hero_features! : [];
 
   return (

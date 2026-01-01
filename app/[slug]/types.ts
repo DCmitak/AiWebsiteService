@@ -52,9 +52,10 @@ export type SiteSettings = {
   youtube_url?: string | null;
 
   // HERO copy
-  category_label?: string;
-  hero_title?: string;
-  hero_subtitle?: string;
+  category_label?: string | null;
+  hero_title?: string | null;
+  hero_subtitle?: string | null;
+
 
   // Optionals
   hero_image_alt?: string;

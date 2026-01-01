@@ -51,6 +51,10 @@ export default async function AdminSettings(props: {
 
     const payload: any = {
       client_id: clientId,
+      category_label: (formData.get("category_label")?.toString() || "").trim() || null,
+      hero_title: (formData.get("hero_title")?.toString() || "").trim() || null,
+      hero_subtitle: (formData.get("hero_subtitle")?.toString() || "").trim() || null,
+
 
       theme_preset: themePreset, // IMPORTANT: never null
       primary_color: (formData.get("primary_color")?.toString() || "").trim() || "#dca263",
@@ -148,11 +152,52 @@ export default async function AdminSettings(props: {
           </Card>
 
           <Card title="Branding">
-            <Field name="logo_url" label="Logo URL" defaultValue={settings?.logo_url || ""} />
-            <Field name="hero_image_url" label="Hero Image URL" defaultValue={settings?.hero_image_url || ""} />
-            <Field name="tagline" label="Tagline (кратко под заглавието)" defaultValue={settings?.tagline || ""} />
-            <TextArea name="about_text" label="About text (дълъг текст)" defaultValue={settings?.about_text || ""} />
+            <Field
+              name="logo_url"
+              label="Logo URL"
+              defaultValue={settings?.logo_url || ""}
+            />
+
+            <Field
+              name="hero_image_url"
+              label="Hero Image URL"
+              defaultValue={settings?.hero_image_url || ""}
+            />
+
+            {/* НОВО */}
+            <Field
+              name="category_label"
+              label="Category label (над заглавието)"
+              defaultValue={settings?.category_label || ""}
+            />
+
+            {/* НОВО */}
+            <Field
+              name="hero_title"
+              label="Hero title (H1)"
+              defaultValue={settings?.hero_title || ""}
+            />
+
+            {/* НОВО */}
+            <TextArea
+              name="hero_subtitle"
+              label="Hero subtitle (под заглавието)"
+              defaultValue={settings?.hero_subtitle || ""}
+            />
+
+            <Field
+              name="tagline"
+              label="Tagline (fallback текст)"
+              defaultValue={settings?.tagline || ""}
+            />
+
+            <TextArea
+              name="about_text"
+              label="About text (дълъг текст)"
+              defaultValue={settings?.about_text || ""}
+            />
           </Card>
+
 
           <Card title="Social">
             <Field name="instagram_url" label="Instagram URL" defaultValue={settings?.instagram_url || ""} />
