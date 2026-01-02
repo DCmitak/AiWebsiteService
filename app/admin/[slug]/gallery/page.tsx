@@ -49,7 +49,15 @@ export default async function AdminGallery(props: {
       ? "Image deleted."
       : toast === "moved"
       ? "Order updated."
+      : toast === "replaced"
+      ? "Image replaced."
+      : toast === "missing_file"
+      ? "Please choose a file first."
+      : toast === "upload_failed"
+      ? "Upload failed."
       : null;
+
+  const BUCKET = "gallery";
 
   async function addImage(formData: FormData) {
     "use server";
@@ -60,15 +68,44 @@ export default async function AdminGallery(props: {
     const clientId = formData.get("client_id")?.toString();
     if (!clientId) throw new Error("Missing client_id");
 
-    const image_url = (formData.get("image_url")?.toString() || "").trim();
+    const file = formData.get("image_file") as File | null;
+
+    const image_url_raw = (formData.get("image_url")?.toString() || "").trim();
     const sort_order = parseInt(formData.get("sort_order")?.toString() || "", 10) || 1;
 
-    if (!image_url) throw new Error("image_url is required");
+    let finalUrl = image_url_raw;
 
-    const sb2 = supabaseServer();
-    const { error } = await sb2.from("gallery_images").insert({
+    // Prefer upload if file is provided
+    if (file && file.size > 0) {
+      const MAX_BYTES = 10 * 1024 * 1024;
+      if (file.size > MAX_BYTES) throw new Error("File too large (max 10MB).");
+
+      const sb2 = supabaseServer();
+
+      const safeName = sanitizeFileName(file.name || "image");
+      const ext = safeName.includes(".") ? safeName.split(".").pop() : "jpg";
+      const path = `${clientId}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const { error: upErr } = await sb2.storage.from(BUCKET).upload(path, buffer, {
+        contentType: file.type || "image/jpeg",
+        upsert: false,
+      });
+
+      if (upErr) throw new Error(upErr.message);
+
+      const { data: pub } = sb2.storage.from(BUCKET).getPublicUrl(path);
+      finalUrl = pub.publicUrl;
+    }
+
+    if (!finalUrl) throw new Error("Provide an Image URL or upload a file.");
+
+    const sb3 = supabaseServer();
+    const { error } = await sb3.from("gallery_images").insert({
       client_id: clientId,
-      image_url,
+      image_url: finalUrl,
       sort_order,
     });
 
@@ -102,7 +139,7 @@ export default async function AdminGallery(props: {
       .from("gallery_images")
       .update({ image_url, sort_order })
       .eq("id", id)
-      .eq("client_id", clientId); // ✅ safety
+      .eq("client_id", clientId);
 
     if (error) throw new Error(error.message);
 
@@ -110,6 +147,69 @@ export default async function AdminGallery(props: {
     revalidatePath(`/admin/${slug}/gallery`);
 
     redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=saved`);
+  }
+
+  async function replaceImage(formData: FormData) {
+    "use server";
+
+    const key = formData.get("key")?.toString();
+    if (!key || key !== process.env.ADMIN_KEY) throw new Error("Unauthorized");
+
+    const id = formData.get("id")?.toString();
+    if (!id) throw new Error("Missing id");
+
+    const clientId = formData.get("client_id")?.toString();
+    if (!clientId) throw new Error("Missing client_id");
+
+    const oldUrl = (formData.get("old_image_url")?.toString() || "").trim();
+
+    const file = formData.get("replace_file") as File | null;
+
+    // ✅ No crash: show toast
+    if (!file || file.size <= 0) {
+      revalidatePath(`/admin/${slug}/gallery`);
+      return redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=missing_file`);
+    }
+
+    const MAX_BYTES = 10 * 1024 * 1024;
+    if (file.size > MAX_BYTES) throw new Error("File too large (max 10MB).");
+
+    const sb2 = supabaseServer();
+
+    const safeName = sanitizeFileName(file.name || "image");
+    const ext = safeName.includes(".") ? safeName.split(".").pop() : "jpg";
+    const path = `${clientId}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const { error: upErr } = await sb2.storage.from(BUCKET).upload(path, buffer, {
+      contentType: file.type || "image/jpeg",
+      upsert: false,
+    });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: pub } = sb2.storage.from(BUCKET).getPublicUrl(path);
+    const newUrl = pub.publicUrl;
+
+    const { error: updErr } = await sb2
+      .from("gallery_images")
+      .update({ image_url: newUrl })
+      .eq("id", id)
+      .eq("client_id", clientId);
+
+    if (updErr) throw new Error(updErr.message);
+
+    // Best-effort: remove old object if it is from our bucket
+    const oldPath = storagePathFromPublicUrl(oldUrl, BUCKET);
+    if (oldPath) {
+      await sb2.storage.from(BUCKET).remove([oldPath]);
+    }
+
+    revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/gallery`);
+
+    redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=replaced`);
   }
 
   async function deleteImage(formData: FormData) {
@@ -124,14 +224,23 @@ export default async function AdminGallery(props: {
     const clientId = formData.get("client_id")?.toString();
     if (!clientId) throw new Error("Missing client_id");
 
+    const imageUrl = (formData.get("image_url")?.toString() || "").trim();
+
     const sb2 = supabaseServer();
+
     const { error } = await sb2
       .from("gallery_images")
       .delete()
       .eq("id", id)
-      .eq("client_id", clientId); // ✅ safety
+      .eq("client_id", clientId);
 
     if (error) throw new Error(error.message);
+
+    // Best-effort: remove storage object if it's our bucket URL
+    const path = storagePathFromPublicUrl(imageUrl, BUCKET);
+    if (path) {
+      await sb2.storage.from(BUCKET).remove([path]);
+    }
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/gallery`);
@@ -271,7 +380,18 @@ export default async function AdminGallery(props: {
             <input type="hidden" name="key" value={key} />
             <input type="hidden" name="client_id" value={client.id} />
 
-            <Field name="image_url" label="Image URL" placeholder="https://..." className="md:col-span-5" />
+            <label className="block space-y-1 md:col-span-6">
+              <div className="text-sm text-gray-600">Upload image</div>
+              <input
+                type="file"
+                name="image_file"
+                accept="image/*"
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
+              />
+              <div className="text-xs text-gray-500">Prefer upload. If empty, Image URL below will be used.</div>
+            </label>
+
+            <Field name="image_url" label="Image URL (optional)" placeholder="https://..." className="md:col-span-5" />
             <Field name="sort_order" label="Sort" placeholder="1" className="md:col-span-1" />
 
             <div className="md:col-span-6">
@@ -300,10 +420,41 @@ export default async function AdminGallery(props: {
                     <img src={g.image_url} alt="" className="w-full h-52 object-cover" />
                   </div>
 
+                  {/* Replace image */}
+                  <form action={replaceImage} className="mt-4 rounded-lg border border-gray-200 p-3 bg-gray-50">
+                    <input type="hidden" name="key" value={key} />
+                    <input type="hidden" name="id" value={g.id} />
+                    <input type="hidden" name="client_id" value={client.id} />
+                    <input type="hidden" name="old_image_url" value={g.image_url} />
+
+                    <div className="text-sm font-semibold mb-2">Replace image</div>
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="block space-y-1">
+                          <div className="text-xs text-gray-600">Upload new file</div>
+                          <input
+                            type="file"
+                            name="replace_file"
+                            accept="image/*"
+                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2"
+                          />
+                        </label>
+                      </div>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
+                      >
+                        Replace
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Edit / reorder / delete */}
                   <form className="grid grid-cols-6 gap-3 mt-4">
                     <input type="hidden" name="key" value={key} />
                     <input type="hidden" name="id" value={g.id} />
                     <input type="hidden" name="client_id" value={client.id} />
+                    <input type="hidden" name="image_url" value={g.image_url} />
 
                     <Input name="image_url" label="URL" defaultValue={g.image_url} className="col-span-6" />
                     <Input name="sort_order" label="Sort" defaultValue={g.sort_order ?? ""} className="col-span-2" />
@@ -358,6 +509,24 @@ export default async function AdminGallery(props: {
       </div>
     </main>
   );
+}
+
+/* ---------------- Gallery helpers ---------------- */
+
+function sanitizeFileName(name: string) {
+  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9.\-_]/g, "");
+}
+
+function storagePathFromPublicUrl(publicUrl: string, bucket: string) {
+  try {
+    const u = new URL(publicUrl);
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const idx = u.pathname.indexOf(marker);
+    if (idx === -1) return null;
+    return u.pathname.slice(idx + marker.length);
+  } catch {
+    return null;
+  }
 }
 
 /* ---------------- UI helpers ---------------- */

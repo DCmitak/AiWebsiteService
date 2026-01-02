@@ -1,5 +1,6 @@
 // app/[slug]/themes/Minimal.tsx
-import type { PublicPayload, Review } from "../types";
+import ServicesTabs from "../ServicesTabs";
+import type { PublicPayload, Review, Service } from "../types";
 import ReviewsCarousel from "./ReviewsCarousel";
 
 export default function MinimalTheme({
@@ -41,7 +42,7 @@ export default function MinimalTheme({
         : mapUrl
       : "";
 
-  const svc = Array.isArray(services) ? services : [];
+  const svc = (Array.isArray(services) ? services : []) as Service[];
   const gal = Array.isArray(gallery) ? gallery : [];
 
   // IMPORTANT: ONLY DB reviews (payload)
@@ -56,8 +57,6 @@ export default function MinimalTheme({
       (gal[(i + 3) % Math.max(1, gal.length)]?.image_url as string | undefined) ||
       heroImg,
   }));
-
-  const grouped = groupServicesByCategory(svc);
 
   // Hero copy from admin (optional)
   const heroTitle = (settings?.hero_title || "").trim();
@@ -84,20 +83,28 @@ export default function MinimalTheme({
             )}
 
             <div className="min-w-0 leading-tight">
-              <div className="text-[15px] font-semibold tracking-tight truncate">
-                {client.business_name}
-              </div>
+              <div className="text-[15px] font-semibold tracking-tight truncate">{client.business_name}</div>
               <div className="text-xs text-black/55 truncate">{client.city}</div>
             </div>
           </a>
 
           {/* Nav */}
           <nav className="hidden items-center gap-7 text-sm text-black/60 md:flex">
-            <a href="#services" className="hover:text-black">Услуги</a>
-            <a href="#about" className="hover:text-black">За нас</a>
-            <a href="#pricing" className="hover:text-black">Цени</a>
-            <a href="#reviews" className="hover:text-black">Отзиви</a>
-            <a href="#contact" className="hover:text-black">Контакти</a>
+            <a href="#services" className="hover:text-black">
+              Услуги
+            </a>
+            <a href="#about" className="hover:text-black">
+              За нас
+            </a>
+            <a href="#pricing" className="hover:text-black">
+              Цени
+            </a>
+            <a href="#reviews" className="hover:text-black">
+              Отзиви
+            </a>
+            <a href="#contact" className="hover:text-black">
+              Контакти
+            </a>
           </nav>
 
           {/* Social + CTA */}
@@ -120,15 +127,13 @@ export default function MinimalTheme({
         </div>
       </header>
 
-      {/* HERO — Lotus-style */}
+      {/* HERO */}
       <section style={{ background: bg }} className="border-b border-black/10">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid grid-cols-1 items-center gap-12 py-14 md:grid-cols-12 md:py-20">
             {/* LEFT */}
             <div className="md:col-span-8 lg:col-span-8">
-              <div className="text-[11px] font-semibold tracking-[0.30em] text-black/55">
-                {categoryLabel}
-              </div>
+              <div className="text-[11px] font-semibold tracking-[0.30em] text-black/55">{categoryLabel}</div>
 
               <h1
                 className="mt-5 font-serif text-[46px] leading-[0.93] tracking-[-0.02em] text-[#111827] md:text-[78px] lg:text-[86px]"
@@ -153,7 +158,6 @@ export default function MinimalTheme({
                 </p>
               ) : null}
 
-
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <a
                   href={booking}
@@ -173,6 +177,7 @@ export default function MinimalTheme({
                 ) : null}
               </div>
 
+              {/* Feature mini cards */}
               <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-3xl">
                 {(heroFeatures.length
                   ? heroFeatures.slice(0, 3).map((x) => ({ t: x.title, d: x.text }))
@@ -322,7 +327,7 @@ export default function MinimalTheme({
         </div>
       </section>
 
-      {/* PRICING */}
+      {/* PRICING (TABS like Luxe) */}
       <section id="pricing" className="bg-[#F6EEE9]">
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
           <div className="grid lg:grid-cols-12 gap-10">
@@ -346,39 +351,15 @@ export default function MinimalTheme({
                   Цени
                 </div>
 
-                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
-                  Ценоразпис
-                </h2>
+                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Ценоразпис</h2>
 
                 <p className="mt-4 opacity-75 max-w-xl">
                   Перфектният резултат идва от внимание към детайла и качествени продукти.
                 </p>
 
-                <div className="mt-8 space-y-8">
-                  {Object.entries(grouped).slice(0, 2).map(([cat, list]) => (
-                    <div key={cat}>
-                      <div className="font-serif text-xl font-semibold">{cat || "Услуги"}</div>
-
-                      <div className="mt-4 space-y-4">
-                        {list.slice(0, 6).map((s) => (
-                          <div key={s.id} className="flex items-start justify-between gap-6">
-                            <div className="min-w-0">
-                              <div className="font-semibold">{s.name}</div>
-                              {s.description ? (
-                                <div className="opacity-70 text-sm mt-1 line-clamp-2">{s.description}</div>
-                              ) : null}
-                            </div>
-
-                            <div className="shrink-0 text-right">
-                              <div style={{ color: primary }} className="font-semibold">
-                                {formatPriceBG(s.price_from)}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                <div className="mt-8">
+                  {/* Same tabs component as Luxe */}
+                  <ServicesTabs services={svc} primary={primary} bookingUrl={booking} />
                 </div>
 
                 <div className="mt-10">
@@ -404,9 +385,7 @@ export default function MinimalTheme({
               Отзиви
             </div>
 
-            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
-              Клиентите за нас
-            </h2>
+            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Клиентите за нас</h2>
 
             <p className="mt-3 opacity-70">Благодарим за всяко мнение!</p>
           </div>
@@ -417,7 +396,6 @@ export default function MinimalTheme({
         </div>
       </section>
 
-
       {/* CONTACT */}
       <section id="contact" style={{ background: surface }} className="border-t border-black/10">
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
@@ -426,9 +404,7 @@ export default function MinimalTheme({
               Контакти
             </div>
 
-            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
-              Свържи се с нас
-            </h2>
+            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Свържи се с нас</h2>
 
             <p className="mt-3 opacity-70">Запази час и се погрижи за себе си.</p>
           </div>
@@ -467,7 +443,9 @@ export default function MinimalTheme({
           <div>
             © {new Date().getFullYear()} {client.business_name}
           </div>
-          <a href="#services" className="underline">Услуги</a>
+          <a href="#services" className="underline">
+            Услуги
+          </a>
         </div>
       </footer>
 
@@ -513,23 +491,11 @@ function ContactCard({ title, value, icon }: { title: string; value: string; ico
 function formatPriceBG(price: any) {
   const n = typeof price === "number" ? price : Number(price);
   if (!Number.isFinite(n) || n <= 0) return "—";
-  return `${n.toFixed(0)} лв.`;
+  return `${n.toFixed(0)}  €`;
 }
 
-function groupServicesByCategory(services: any[]) {
-  const out: Record<string, any[]> = {};
-  for (const s of services) {
-    const key = (s?.category || "").trim();
-    if (!out[key]) out[key] = [];
-    out[key].push(s);
-  }
-  return Object.fromEntries(
-    Object.entries(out).sort((a, b) => (b[1]?.length || 0) - (a[1]?.length || 0))
-  );
-}
-
-function pickFeaturedServices(services: any[], count: number) {
-  const byCat: Record<string, any[]> = {};
+function pickFeaturedServices(services: Service[], count: number) {
+  const byCat: Record<string, Service[]> = {};
   for (const s of services) {
     const k = (s?.category || "").trim();
     if (!byCat[k]) byCat[k] = [];
@@ -537,11 +503,10 @@ function pickFeaturedServices(services: any[], count: number) {
   }
 
   const cats = Object.keys(byCat).filter(Boolean);
-  const picked: any[] = [];
+  const picked: Service[] = [];
 
   for (const c of cats) {
-    const best =
-      byCat[c]?.find((x) => Number.isFinite(Number(x?.price_from))) || byCat[c]?.[0];
+    const best = byCat[c]?.find((x) => Number.isFinite(Number(x?.price_from))) || byCat[c]?.[0];
     if (best) picked.push(best);
     if (picked.length >= count) break;
   }
