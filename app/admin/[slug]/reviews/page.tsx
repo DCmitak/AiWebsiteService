@@ -1,7 +1,8 @@
 // app/admin/[slug]/reviews/page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
-import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import AdminTopNav from "@/app/admin/_components/AdminTopNav";
+import { redirect } from "next/navigation";
 
 type ReviewRow = {
   id: string;
@@ -14,9 +15,9 @@ type ReviewRow = {
 
 export default async function AdminReviews(props: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ key?: string }>;
+  searchParams: Promise<{ key?: string; toast?: string }>;
 }) {
-  const [{ slug }, { key }] = await Promise.all([props.params, props.searchParams]);
+  const [{ slug }, { key, toast }] = await Promise.all([props.params, props.searchParams]);
 
   if (!key || key !== process.env.ADMIN_KEY) {
     return <div className="p-8">Unauthorized</div>;
@@ -24,7 +25,6 @@ export default async function AdminReviews(props: {
 
   const sb = supabaseServer();
 
-  // 1) Get client by slug
   const { data: client, error: clientErr } = await sb
     .from("clients")
     .select("id, slug, business_name")
@@ -34,7 +34,6 @@ export default async function AdminReviews(props: {
   if (clientErr) return <div className="p-8">DB error: {clientErr.message}</div>;
   if (!client) return <div className="p-8">Client not found</div>;
 
-  // 2) Load reviews for this client
   const { data: reviews, error: reviewsErr } = await sb
     .from("reviews")
     .select("id, client_id, author, rating, text, created_at")
@@ -61,8 +60,8 @@ export default async function AdminReviews(props: {
     if (!text) throw new Error("Missing text");
     if (!Number.isFinite(rating)) throw new Error("Invalid rating");
 
-    const sb = supabaseServer();
-    const { error } = await sb.from("reviews").insert({
+    const sb2 = supabaseServer();
+    const { error } = await sb2.from("reviews").insert({
       client_id: clientId,
       author,
       rating,
@@ -73,6 +72,8 @@ export default async function AdminReviews(props: {
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/reviews`);
+
+    redirect(`/admin/${slug}/reviews?key=${encodeURIComponent(key)}&toast=added`);
   }
 
   async function deleteReview(formData: FormData) {
@@ -86,57 +87,35 @@ export default async function AdminReviews(props: {
     if (!id) throw new Error("Missing id");
     if (!clientId) throw new Error("Missing client_id");
 
-    const sb = supabaseServer();
-
-    // Extra safety: delete only if it belongs to this client
-    const { error } = await sb.from("reviews").delete().eq("id", id).eq("client_id", clientId);
+    const sb2 = supabaseServer();
+    const { error } = await sb2.from("reviews").delete().eq("id", id).eq("client_id", clientId);
 
     if (error) throw new Error(error.message);
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/reviews`);
+
+    redirect(`/admin/${slug}/reviews?key=${encodeURIComponent(key)}&toast=deleted`);
   }
 
-  const adminBase = `/admin/${client.slug}`;
-  const backUrl = `${adminBase}?key=${encodeURIComponent(key)}`;
-  const settingsUrl = `${adminBase}/settings?key=${encodeURIComponent(key)}`;
-  const publicUrl = `/${client.slug}`;
+  const toastText =
+    toast === "added" ? "Review added." : toast === "deleted" ? "Review deleted." : null;
 
   return (
     <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-semibold">Reviews: {client.business_name}</h1>
-            <div className="text-sm text-gray-500">slug: {client.slug}</div>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <AdminTopNav
+          slug={client.slug}
+          businessName={`${client.business_name} — Reviews`}
+          keyParam={key}
+          active="reviews"
+        />
+
+        {toastText ? (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            {toastText}
           </div>
-
-          <div className="flex gap-2 flex-wrap">
-            <Link
-              href={backUrl}
-              className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-            >
-              ← Back
-            </Link>
-
-            <Link
-              href={settingsUrl}
-              className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-            >
-              Settings →
-            </Link>
-
-            <a
-              href={publicUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-            >
-              View public →
-            </a>
-          </div>
-        </div>
+        ) : null}
 
         {/* Add review */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
@@ -167,12 +146,13 @@ export default async function AdminReviews(props: {
             <TextArea name="text" label="Текст" placeholder="Напиши отзива тук..." rows={4} />
 
             <div className="flex items-center gap-3">
-              <button className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
+              <button
+                type="submit"
+                className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
+              >
                 Add
               </button>
-              <div className="text-sm text-gray-500">
-                След Add: refresh на <code className="px-2 py-1 bg-gray-100 rounded">{publicUrl}</code>
-              </div>
+              <div className="text-sm text-gray-500">След Add: виж публичната страница (View public →)</div>
             </div>
           </form>
         </section>
@@ -191,9 +171,7 @@ export default async function AdminReviews(props: {
                     <div className="flex items-center gap-3 flex-wrap">
                       <div className="font-semibold">{r.author}</div>
                       <Stars rating={r.rating} />
-                      <div className="text-xs text-gray-500">
-                        {new Date(r.created_at).toLocaleString()}
-                      </div>
+                      <div className="text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}</div>
                     </div>
                     <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{r.text}</p>
                   </div>
@@ -203,6 +181,7 @@ export default async function AdminReviews(props: {
                     <input type="hidden" name="client_id" value={client.id} />
                     <input type="hidden" name="id" value={r.id} />
                     <button
+                      type="submit"
                       className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
                       aria-label={`Delete review ${r.id}`}
                     >

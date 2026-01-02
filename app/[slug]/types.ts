@@ -39,7 +39,6 @@ export type SiteSettings = {
   address?: string | null;
   working_hours?: string | null;
 
-  tagline?: string | null;
   about_text?: string | null;
 
   google_maps_url?: string | null;

@@ -1,12 +1,15 @@
+// app/admin/[slug]/settings/page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
-import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import AdminTopNav from "@/app/admin/_components/AdminTopNav";
 
 export default async function AdminSettings(props: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ key?: string }>;
+  searchParams: Promise<{ key?: string; saved?: string }>;
 }) {
-  const [{ slug }, { key }] = await Promise.all([props.params, props.searchParams]);
+  const [{ slug }, { key, saved }] = await Promise.all([props.params, props.searchParams]);
 
   if (!key || key !== process.env.ADMIN_KEY) {
     return <div className="p-8">Unauthorized</div>;
@@ -14,19 +17,22 @@ export default async function AdminSettings(props: {
 
   const sb = supabaseServer();
 
-  const { data: client } = await sb
+  const { data: client, error: clientErr } = await sb
     .from("clients")
     .select("id, slug, business_name")
     .eq("slug", slug)
     .maybeSingle();
 
+  if (clientErr) return <div className="p-8">DB error: {clientErr.message}</div>;
   if (!client) return <div className="p-8">Client not found</div>;
 
-  const { data: settings } = await sb
+  const { data: settings, error: settingsErr } = await sb
     .from("site_settings")
     .select("*")
     .eq("client_id", client.id)
     .maybeSingle();
+
+  if (settingsErr) return <div className="p-8">DB error: {settingsErr.message}</div>;
 
   async function save(formData: FormData) {
     "use server";
@@ -37,93 +43,79 @@ export default async function AdminSettings(props: {
     const clientId = formData.get("client_id")?.toString();
     if (!clientId) throw new Error("Missing client_id");
 
-    // theme_preset is NOT NULL in your DB -> always send a value
+    // theme_preset is NOT NULL -> always send a value
     const themePreset = (formData.get("theme_preset")?.toString() || "").trim() || "luxe";
 
     const brandsRaw = formData.get("brands")?.toString() || "[]";
-    let brands: any = [];
+    let brands: any[] = [];
     try {
-      brands = JSON.parse(brandsRaw);
-      if (!Array.isArray(brands)) brands = [];
+      const parsed = JSON.parse(brandsRaw);
+      brands = Array.isArray(parsed) ? parsed : [];
     } catch {
       brands = [];
     }
 
     const payload: any = {
       client_id: clientId,
+
+      // Hero copy
       category_label: (formData.get("category_label")?.toString() || "").trim() || null,
       hero_title: (formData.get("hero_title")?.toString() || "").trim() || null,
       hero_subtitle: (formData.get("hero_subtitle")?.toString() || "").trim() || null,
 
-
-      theme_preset: themePreset, // IMPORTANT: never null
+      // Theme
+      theme_preset: themePreset,
       primary_color: (formData.get("primary_color")?.toString() || "").trim() || "#dca263",
 
+      // Basics
       phone: (formData.get("phone")?.toString() || "").trim() || null,
       booking_url: (formData.get("booking_url")?.toString() || "").trim() || null,
-
       address: (formData.get("address")?.toString() || "").trim() || null,
       working_hours: (formData.get("working_hours")?.toString() || "").trim() || null,
 
+      // Images
       logo_url: (formData.get("logo_url")?.toString() || "").trim() || null,
       hero_image_url: (formData.get("hero_image_url")?.toString() || "").trim() || null,
 
-      tagline: (formData.get("tagline")?.toString() || "").trim() || null,
+      // Long text
       about_text: (formData.get("about_text")?.toString() || "").trim() || null,
 
+      // Maps + Social
       google_maps_url: (formData.get("google_maps_url")?.toString() || "").trim() || null,
-
       instagram_url: (formData.get("instagram_url")?.toString() || "").trim() || null,
       facebook_url: (formData.get("facebook_url")?.toString() || "").trim() || null,
       tiktok_url: (formData.get("tiktok_url")?.toString() || "").trim() || null,
       youtube_url: (formData.get("youtube_url")?.toString() || "").trim() || null,
 
+      // JSON
       brands,
+
       updated_at: new Date().toISOString(),
     };
 
-    const sb = supabaseServer();
-    const { error } = await sb.from("site_settings").upsert(payload, { onConflict: "client_id" });
+    const sb2 = supabaseServer();
+    const { error } = await sb2.from("site_settings").upsert(payload, { onConflict: "client_id" });
     if (error) throw new Error(error.message);
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/settings`);
+
+    // Important: this reloads the page so defaultValue shows the new value
+    redirect(`/admin/${slug}/settings?key=${encodeURIComponent(key)}&saved=1`);
   }
 
   const publicUrl = `/${slug}`;
-  const servicesUrl = `/admin/${slug}/services?key=${encodeURIComponent(key)}`;
-  const galleryUrl = `/admin/${slug}/gallery?key=${encodeURIComponent(key)}`;
 
   return (
-    <main className="p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Settings: {client.business_name}</h1>
-            <div className="text-sm text-gray-500">slug: {client.slug}</div>
-          </div>
+    <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <AdminTopNav slug={client.slug} businessName={`${client.business_name} — Settings`} keyParam={key} active="settings" />
 
-          <div className="flex gap-2 flex-wrap">
-            <Link
-              href={`${publicUrl}`}
-              className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-            >
-              View public →
-            </Link>
-            <Link
-              href={servicesUrl}
-              className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-            >
-              Services →
-            </Link>
-            <Link
-              href={galleryUrl}
-              className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-            >
-              Gallery →
-            </Link>
+        {saved === "1" ? (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            Saved successfully.
           </div>
-        </div>
+        ) : null}
 
         <form action={save} className="space-y-6">
           <input type="hidden" name="key" value={key} />
@@ -131,15 +123,15 @@ export default async function AdminSettings(props: {
 
           <Card title="Theme">
             <label className="block space-y-1">
-            <div className="text-sm text-gray-600">Theme preset</div>
-            <select
+              <div className="text-sm text-gray-600">Theme preset</div>
+              <select
                 name="theme_preset"
                 defaultValue={settings?.theme_preset || "luxe"}
-                className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900"
-            >
+                className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              >
                 <option value="luxe">Luxe (женствен/лукс)</option>
                 <option value="minimal">Minimal (чист/универсален)</option>
-            </select>
+              </select>
             </label>
           </Card>
 
@@ -152,52 +144,30 @@ export default async function AdminSettings(props: {
           </Card>
 
           <Card title="Branding">
-            <Field
-              name="logo_url"
-              label="Logo URL"
-              defaultValue={settings?.logo_url || ""}
-            />
+            <Field name="logo_url" label="Logo URL" defaultValue={settings?.logo_url || ""} />
+            <Field name="hero_image_url" label="Hero Image URL" defaultValue={settings?.hero_image_url || ""} />
 
-            <Field
-              name="hero_image_url"
-              label="Hero Image URL"
-              defaultValue={settings?.hero_image_url || ""}
-            />
-
-            {/* НОВО */}
             <Field
               name="category_label"
               label="Category label (над заглавието)"
               defaultValue={settings?.category_label || ""}
             />
+            <Field name="hero_title" label="Hero title (H1)" defaultValue={settings?.hero_title || ""} />
 
-            {/* НОВО */}
-            <Field
-              name="hero_title"
-              label="Hero title (H1)"
-              defaultValue={settings?.hero_title || ""}
-            />
-
-            {/* НОВО */}
             <TextArea
               name="hero_subtitle"
               label="Hero subtitle (под заглавието)"
               defaultValue={settings?.hero_subtitle || ""}
-            />
-
-            <Field
-              name="tagline"
-              label="Tagline (fallback текст)"
-              defaultValue={settings?.tagline || ""}
+              rows={4}
             />
 
             <TextArea
               name="about_text"
               label="About text (дълъг текст)"
               defaultValue={settings?.about_text || ""}
+              rows={6}
             />
           </Card>
-
 
           <Card title="Social">
             <Field name="instagram_url" label="Instagram URL" defaultValue={settings?.instagram_url || ""} />
@@ -207,11 +177,12 @@ export default async function AdminSettings(props: {
           </Card>
 
           <Card title="Maps + Brands">
-            <Field name="google_maps_url" label="Google Maps embed URL" defaultValue={settings?.google_maps_url || ""} />
+            <Field name="google_maps_url" label="Google Maps URL" defaultValue={settings?.google_maps_url || ""} />
             <TextArea
               name="brands"
               label='Brands JSON (пример: ["OPI","CND","KODI"])'
               defaultValue={JSON.stringify(settings?.brands || [], null, 2)}
+              rows={6}
             />
           </Card>
 
@@ -219,15 +190,25 @@ export default async function AdminSettings(props: {
             <button className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
               Save
             </button>
+
             <div className="text-sm text-gray-500">
-              След Save: refresh на <code className="px-2 py-1 bg-gray-100 rounded">{publicUrl}</code>
+              Public:{" "}
+              <Link className="underline" href={publicUrl} target="_blank" rel="noreferrer">
+                {publicUrl}
+              </Link>
             </div>
           </div>
         </form>
+
+        <p className="text-sm text-gray-500">
+          * Засега достъпът е с <code>?key=</code>. По-късно го заменяме с login.
+        </p>
       </div>
     </main>
   );
 }
+
+/* ---------------- UI helpers ---------------- */
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -251,14 +232,24 @@ function Field({ name, label, defaultValue }: { name: string; label: string; def
   );
 }
 
-function TextArea({ name, label, defaultValue }: { name: string; label: string; defaultValue: string }) {
+function TextArea({
+  name,
+  label,
+  defaultValue,
+  rows,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+  rows?: number;
+}) {
   return (
     <label className="block space-y-1">
       <div className="text-sm text-gray-600">{label}</div>
       <textarea
         name={name}
         defaultValue={defaultValue}
-        rows={6}
+        rows={rows ?? 6}
         className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
       />
     </label>

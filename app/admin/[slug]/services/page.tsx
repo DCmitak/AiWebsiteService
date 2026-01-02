@@ -1,6 +1,8 @@
+// app/admin/[slug]/services/page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
-import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import AdminTopNav from "@/app/admin/_components/AdminTopNav";
+import { redirect } from "next/navigation";
 
 type ServiceRow = {
   id: string;
@@ -15,9 +17,9 @@ type ServiceRow = {
 
 export default async function AdminServices(props: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ key?: string }>;
+  searchParams: Promise<{ key?: string; toast?: string }>;
 }) {
-  const [{ slug }, { key }] = await Promise.all([props.params, props.searchParams]);
+  const [{ slug }, { key, toast }] = await Promise.all([props.params, props.searchParams]);
 
   if (!key || key !== process.env.ADMIN_KEY) {
     return <div className="p-8">Unauthorized</div>;
@@ -42,6 +44,15 @@ export default async function AdminServices(props: {
 
   if (servicesErr) return <div className="p-8">DB error: {servicesErr.message}</div>;
 
+  const toastText =
+    toast === "added"
+      ? "Service added."
+      : toast === "saved"
+      ? "Changes saved."
+      : toast === "deleted"
+      ? "Service deleted."
+      : null;
+
   async function addService(formData: FormData) {
     "use server";
 
@@ -63,12 +74,14 @@ export default async function AdminServices(props: {
 
     if (!payload.name) throw new Error("Name is required");
 
-    const sb = supabaseServer();
-    const { error } = await sb.from("services").insert(payload);
+    const sb2 = supabaseServer();
+    const { error } = await sb2.from("services").insert(payload);
     if (error) throw new Error(error.message);
 
-    revalidatePath(`/admin/${slug}/services`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/services`);
+
+    redirect(`/admin/${slug}/services?key=${encodeURIComponent(key)}&toast=added`);
   }
 
   async function updateService(formData: FormData) {
@@ -79,6 +92,9 @@ export default async function AdminServices(props: {
 
     const id = formData.get("id")?.toString();
     if (!id) throw new Error("Missing id");
+
+    const clientId = formData.get("client_id")?.toString();
+    if (!clientId) throw new Error("Missing client_id");
 
     const payload = {
       category: (formData.get("category")?.toString() || "").trim() || null,
@@ -91,12 +107,19 @@ export default async function AdminServices(props: {
 
     if (!payload.name) throw new Error("Name is required");
 
-    const sb = supabaseServer();
-    const { error } = await sb.from("services").update(payload).eq("id", id);
+    const sb2 = supabaseServer();
+    const { error } = await sb2
+      .from("services")
+      .update(payload)
+      .eq("id", id)
+      .eq("client_id", clientId); // ✅ safety + no TS nullable issue
+
     if (error) throw new Error(error.message);
 
-    revalidatePath(`/admin/${slug}/services`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/services`);
+
+    redirect(`/admin/${slug}/services?key=${encodeURIComponent(key)}&toast=saved`);
   }
 
   async function deleteService(formData: FormData) {
@@ -108,40 +131,39 @@ export default async function AdminServices(props: {
     const id = formData.get("id")?.toString();
     if (!id) throw new Error("Missing id");
 
-    const sb = supabaseServer();
-    const { error } = await sb.from("services").delete().eq("id", id);
+    const clientId = formData.get("client_id")?.toString();
+    if (!clientId) throw new Error("Missing client_id");
+
+    const sb2 = supabaseServer();
+    const { error } = await sb2
+      .from("services")
+      .delete()
+      .eq("id", id)
+      .eq("client_id", clientId); // ✅ safety + no TS nullable issue
+
     if (error) throw new Error(error.message);
 
-    revalidatePath(`/admin/${slug}/services`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/services`);
+
+    redirect(`/admin/${slug}/services?key=${encodeURIComponent(key)}&toast=deleted`);
   }
 
-  const settingsUrl = `/admin/${slug}/settings?key=${encodeURIComponent(key)}`;
-
   return (
-    <main className="p-8">
+    <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Services: {client.business_name}</h1>
-            <div className="text-sm text-gray-500">slug: {client.slug}</div>
-          </div>
+        <AdminTopNav
+          slug={client.slug}
+          businessName={`${client.business_name} — Services`}
+          keyParam={key}
+          active="services"
+        />
 
-          <div className="flex gap-2">
-            <Link
-              href={settingsUrl}
-              className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-            >
-              Settings →
-            </Link>
-            <Link
-              href={`/${slug}`}
-              className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-            >
-              View public →
-            </Link>
+        {toastText ? (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            {toastText}
           </div>
-        </div>
+        ) : null}
 
         {/* ADD NEW */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -170,7 +192,10 @@ export default async function AdminServices(props: {
             </div>
 
             <div className="md:col-span-6">
-              <button className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
+              <button
+                type="submit"
+                className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
+              >
                 Add
               </button>
             </div>
@@ -181,70 +206,87 @@ export default async function AdminServices(props: {
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="font-semibold mb-4">Current services</div>
 
-          <div className="space-y-4">
-            {(services as ServiceRow[]).map((s) => (
-              <div key={s.id} className="rounded-xl border border-gray-200 p-4">
-                {/* ЕДИН form за Save + Delete (без nested forms) */}
-                <form className="grid md:grid-cols-6 gap-3">
-                  <input type="hidden" name="key" value={key} />
-                  <input type="hidden" name="id" value={s.id} />
+          {!services?.length ? (
+            <div className="text-sm text-gray-600">No services yet.</div>
+          ) : (
+            <div className="space-y-4">
+              {(services as ServiceRow[]).map((s) => (
+                <div key={s.id} className="rounded-xl border border-gray-200 p-4">
+                  <form className="grid md:grid-cols-6 gap-3">
+                    <input type="hidden" name="key" value={key} />
+                    <input type="hidden" name="id" value={s.id} />
+                    <input type="hidden" name="client_id" value={client.id} />
 
-                  <Input name="category" label="Category" defaultValue={s.category || ""} className="md:col-span-1" />
-                  <Input name="name" label="Name" defaultValue={s.name} className="md:col-span-2" />
-                  <Input name="price_from" label="Price" defaultValue={s.price_from ?? ""} className="md:col-span-1" />
-                  <Input
-                    name="duration_min"
-                    label="Minutes"
-                    defaultValue={s.duration_min ?? ""}
-                    className="md:col-span-1"
-                  />
-                  <Input
-                    name="sort_order"
-                    label="Sort"
-                    defaultValue={s.sort_order ?? ""}
-                    className="md:col-span-1"
-                  />
+                    <Input name="category" label="Category" defaultValue={s.category || ""} className="md:col-span-1" />
+                    <Input name="name" label="Name" defaultValue={s.name} className="md:col-span-2" />
+                    <Input
+                      name="price_from"
+                      label="Price"
+                      defaultValue={s.price_from ?? ""}
+                      className="md:col-span-1"
+                    />
+                    <Input
+                      name="duration_min"
+                      label="Minutes"
+                      defaultValue={s.duration_min ?? ""}
+                      className="md:col-span-1"
+                    />
+                    <Input
+                      name="sort_order"
+                      label="Sort"
+                      defaultValue={s.sort_order ?? ""}
+                      className="md:col-span-1"
+                    />
 
-                  <div className="md:col-span-6">
-                    <label className="block space-y-1">
-                      <div className="text-sm text-gray-600">Description</div>
-                      <textarea
-                        name="description"
-                        defaultValue={s.description || ""}
-                        rows={2}
-                        className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="md:col-span-6 flex items-center gap-3">
-                    <button
-                      formAction={updateService}
-                      className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-                    >
-                      Save
-                    </button>
-
-                    <button
-                      formAction={deleteService}
-                      className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
-                    >
-                      Delete
-                    </button>
-
-                    <div className="text-sm text-gray-500 ml-auto">
-                      ID: <code className="px-2 py-1 bg-gray-100 rounded">{s.id.slice(0, 8)}…</code>
+                    <div className="md:col-span-6">
+                      <label className="block space-y-1">
+                        <div className="text-sm text-gray-600">Description</div>
+                        <textarea
+                          name="description"
+                          defaultValue={s.description || ""}
+                          rows={2}
+                          className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                        />
+                      </label>
                     </div>
-                  </div>
-                </form>
-              </div>
-            ))}
-          </div>
+
+                    <div className="md:col-span-6 flex items-center gap-3">
+                      <button
+                        type="submit"
+                        formAction={updateService}
+                        className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
+                      >
+                        Save
+                      </button>
+
+                      <button
+                        type="submit"
+                        formAction={deleteService}
+                        className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
+                      >
+                        Delete
+                      </button>
+
+                      <div className="text-sm text-gray-500 ml-auto">
+                        ID: <code className="px-2 py-1 bg-gray-100 rounded">{s.id.slice(0, 8)}…</code>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
+
+        <p className="text-sm text-gray-500">
+          * Засега достъпът е с <code>?key=</code>. По-късно го заменяме с login.
+        </p>
       </div>
     </main>
   );
 }
+
+/* ---------------- UI helpers ---------------- */
 
 function Field({
   name,

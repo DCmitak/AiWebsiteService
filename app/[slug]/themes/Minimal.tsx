@@ -21,10 +21,6 @@ export default function MinimalTheme({
   const hours = settings?.working_hours || "";
   const about = settings?.about_text || "";
 
-  const tagline =
-    settings?.tagline ||
-    "Мястото, където вниманието към детайла е стандарт. Премиум продукти, стерилни инструменти и резултат, който се усеща.";
-
   const mapUrl = settings?.google_maps_url || "";
   const logoUrl = settings?.logo_url || "";
 
@@ -151,9 +147,12 @@ export default function MinimalTheme({
                 )}
               </h1>
 
-              <p className="mt-6 max-w-3xl text-[16px] leading-7 text-black/65 md:text-[19px] md:leading-8">
-                {heroSubtitle || tagline}
-              </p>
+              {heroSubtitle ? (
+                <p className="mt-6 max-w-3xl text-[16px] leading-7 text-black/65 md:text-[19px] md:leading-8">
+                  {heroSubtitle}
+                </p>
+              ) : null}
+
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <a

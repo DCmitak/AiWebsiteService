@@ -9,10 +9,11 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
   const phone = settings?.phone || "";
   const address = settings?.address || "";
   const hours = settings?.working_hours || "";
-  const tagline = settings?.tagline || "";
   const about = settings?.about_text || "";
   const mapUrl = settings?.google_maps_url || "";
   const brands: string[] = Array.isArray(settings?.brands) ? (settings.brands as string[]) : [];
+  const heroTitle = (settings?.hero_title || "").trim();
+  const heroSubtitle = (settings?.hero_subtitle || "").trim();
 
   const facebook = settings?.facebook_url || "";
   const instagram = settings?.instagram_url || "";
@@ -123,17 +124,19 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
               </div>
             </div>
 
-            <h1 className="lux-h text-5xl md:text-6xl lg:text-7xl leading-[0.92]">
-              Скъп вид.
-              <span className="block" style={{ color: primary }}>
-                Чиста форма.
-              </span>
-            </h1>
+            {heroTitle ? (
+              <h1 className="lux-h text-5xl md:text-6xl lg:text-7xl leading-[0.92]">
+                {heroTitle}
+              </h1>
+            ) : null}
 
-            <p className="text-lg md:text-xl text-black/60 leading-relaxed max-w-2xl">
-              {tagline ||
-                "Перлена естетика, прецизна техника и спокойна атмосфера. Запази час и излез с увереност."}
-            </p>
+
+            {heroSubtitle ? (
+              <p className="text-lg md:text-xl text-black/60 leading-relaxed max-w-2xl">
+                {heroSubtitle}
+              </p>
+            ) : null}
+
 
             {/* CTA row */}
             <div className="flex flex-wrap items-center gap-3 pt-1">

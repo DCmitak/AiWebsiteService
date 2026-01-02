@@ -1,6 +1,8 @@
+// app/admin/[slug]/gallery/page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
-import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import AdminTopNav from "@/app/admin/_components/AdminTopNav";
+import { redirect } from "next/navigation";
 
 type GalleryRow = {
   id: string;
@@ -11,9 +13,9 @@ type GalleryRow = {
 
 export default async function AdminGallery(props: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ key?: string }>;
+  searchParams: Promise<{ key?: string; toast?: string }>;
 }) {
-  const [{ slug }, { key }] = await Promise.all([props.params, props.searchParams]);
+  const [{ slug }, { key, toast }] = await Promise.all([props.params, props.searchParams]);
 
   if (!key || key !== process.env.ADMIN_KEY) {
     return <div className="p-8">Unauthorized</div>;
@@ -38,6 +40,17 @@ export default async function AdminGallery(props: {
 
   if (galleryErr) return <div className="p-8">DB error: {galleryErr.message}</div>;
 
+  const toastText =
+    toast === "added"
+      ? "Image added."
+      : toast === "saved"
+      ? "Changes saved."
+      : toast === "deleted"
+      ? "Image deleted."
+      : toast === "moved"
+      ? "Order updated."
+      : null;
+
   async function addImage(formData: FormData) {
     "use server";
 
@@ -52,16 +65,19 @@ export default async function AdminGallery(props: {
 
     if (!image_url) throw new Error("image_url is required");
 
-    const sb = supabaseServer();
-    const { error } = await sb.from("gallery_images").insert({
+    const sb2 = supabaseServer();
+    const { error } = await sb2.from("gallery_images").insert({
       client_id: clientId,
       image_url,
       sort_order,
     });
+
     if (error) throw new Error(error.message);
 
-    revalidatePath(`/admin/${slug}/gallery`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/gallery`);
+
+    redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=added`);
   }
 
   async function updateImage(formData: FormData) {
@@ -73,21 +89,27 @@ export default async function AdminGallery(props: {
     const id = formData.get("id")?.toString();
     if (!id) throw new Error("Missing id");
 
+    const clientId = formData.get("client_id")?.toString();
+    if (!clientId) throw new Error("Missing client_id");
+
     const image_url = (formData.get("image_url")?.toString() || "").trim();
     const sort_order = parseInt(formData.get("sort_order")?.toString() || "", 10) || 1;
 
     if (!image_url) throw new Error("image_url is required");
 
-    const sb = supabaseServer();
-    const { error } = await sb
+    const sb2 = supabaseServer();
+    const { error } = await sb2
       .from("gallery_images")
       .update({ image_url, sort_order })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("client_id", clientId); // ✅ safety
 
     if (error) throw new Error(error.message);
 
-    revalidatePath(`/admin/${slug}/gallery`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/gallery`);
+
+    redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=saved`);
   }
 
   async function deleteImage(formData: FormData) {
@@ -99,12 +121,22 @@ export default async function AdminGallery(props: {
     const id = formData.get("id")?.toString();
     if (!id) throw new Error("Missing id");
 
-    const sb = supabaseServer();
-    const { error } = await sb.from("gallery_images").delete().eq("id", id);
+    const clientId = formData.get("client_id")?.toString();
+    if (!clientId) throw new Error("Missing client_id");
+
+    const sb2 = supabaseServer();
+    const { error } = await sb2
+      .from("gallery_images")
+      .delete()
+      .eq("id", id)
+      .eq("client_id", clientId); // ✅ safety
+
     if (error) throw new Error(error.message);
 
-    revalidatePath(`/admin/${slug}/gallery`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/gallery`);
+
+    redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=deleted`);
   }
 
   async function moveUp(formData: FormData) {
@@ -117,8 +149,8 @@ export default async function AdminGallery(props: {
     const clientId = formData.get("client_id")?.toString();
     if (!id || !clientId) throw new Error("Missing params");
 
-    const sb = supabaseServer();
-    const { data: rows, error } = await sb
+    const sb2 = supabaseServer();
+    const { data: rows, error } = await sb2
       .from("gallery_images")
       .select("id, sort_order")
       .eq("client_id", clientId)
@@ -128,7 +160,12 @@ export default async function AdminGallery(props: {
 
     const list = (rows || []) as { id: string; sort_order: number | null }[];
     const idx = list.findIndex((x) => x.id === id);
-    if (idx <= 0) return;
+
+    if (idx <= 0) {
+      revalidatePath(`/${slug}`);
+      revalidatePath(`/admin/${slug}/gallery`);
+      return redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
+    }
 
     const a = list[idx];
     const b = list[idx - 1];
@@ -136,14 +173,24 @@ export default async function AdminGallery(props: {
     const aOrder = a.sort_order ?? idx + 1;
     const bOrder = b.sort_order ?? idx;
 
-    const { error: e1 } = await sb.from("gallery_images").update({ sort_order: bOrder }).eq("id", a.id);
+    const { error: e1 } = await sb2
+      .from("gallery_images")
+      .update({ sort_order: bOrder })
+      .eq("id", a.id)
+      .eq("client_id", clientId);
     if (e1) throw new Error(e1.message);
 
-    const { error: e2 } = await sb.from("gallery_images").update({ sort_order: aOrder }).eq("id", b.id);
+    const { error: e2 } = await sb2
+      .from("gallery_images")
+      .update({ sort_order: aOrder })
+      .eq("id", b.id)
+      .eq("client_id", clientId);
     if (e2) throw new Error(e2.message);
 
-    revalidatePath(`/admin/${slug}/gallery`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/gallery`);
+
+    redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
   }
 
   async function moveDown(formData: FormData) {
@@ -156,8 +203,8 @@ export default async function AdminGallery(props: {
     const clientId = formData.get("client_id")?.toString();
     if (!id || !clientId) throw new Error("Missing params");
 
-    const sb = supabaseServer();
-    const { data: rows, error } = await sb
+    const sb2 = supabaseServer();
+    const { data: rows, error } = await sb2
       .from("gallery_images")
       .select("id, sort_order")
       .eq("client_id", clientId)
@@ -167,7 +214,12 @@ export default async function AdminGallery(props: {
 
     const list = (rows || []) as { id: string; sort_order: number | null }[];
     const idx = list.findIndex((x) => x.id === id);
-    if (idx === -1 || idx >= list.length - 1) return;
+
+    if (idx === -1 || idx >= list.length - 1) {
+      revalidatePath(`/${slug}`);
+      revalidatePath(`/admin/${slug}/gallery`);
+      return redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
+    }
 
     const a = list[idx];
     const b = list[idx + 1];
@@ -175,56 +227,41 @@ export default async function AdminGallery(props: {
     const aOrder = a.sort_order ?? idx + 1;
     const bOrder = b.sort_order ?? idx + 2;
 
-    const { error: e1 } = await sb.from("gallery_images").update({ sort_order: bOrder }).eq("id", a.id);
+    const { error: e1 } = await sb2
+      .from("gallery_images")
+      .update({ sort_order: bOrder })
+      .eq("id", a.id)
+      .eq("client_id", clientId);
     if (e1) throw new Error(e1.message);
 
-    const { error: e2 } = await sb.from("gallery_images").update({ sort_order: aOrder }).eq("id", b.id);
+    const { error: e2 } = await sb2
+      .from("gallery_images")
+      .update({ sort_order: aOrder })
+      .eq("id", b.id)
+      .eq("client_id", clientId);
     if (e2) throw new Error(e2.message);
 
-    revalidatePath(`/admin/${slug}/gallery`);
     revalidatePath(`/${slug}`);
+    revalidatePath(`/admin/${slug}/gallery`);
+
+    redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
   }
 
-  const settingsUrl = `/admin/${slug}/settings?key=${encodeURIComponent(key)}`;
-  const servicesUrl = `/admin/${slug}/services?key=${encodeURIComponent(key)}`;
-  const galleryUrl = `/admin/${slug}/gallery?key=${encodeURIComponent(key)}`;
-
   return (
-    <main className="p-8">
+    <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Gallery: {client.business_name}</h1>
-            <div className="text-sm text-gray-500">slug: {client.slug}</div>
-          </div>
+        <AdminTopNav
+          slug={client.slug}
+          businessName={`${client.business_name} — Gallery`}
+          keyParam={key}
+          active="gallery"
+        />
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={settingsUrl}
-              className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-            >
-              Settings →
-            </Link>
-            <Link
-              href={servicesUrl}
-              className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-            >
-              Services →
-            </Link>
-            <Link
-              href={galleryUrl}
-              className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-            >
-              Gallery
-            </Link>
-            <Link
-              href={`/${slug}`}
-              className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-            >
-              View public →
-            </Link>
+        {toastText ? (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            {toastText}
           </div>
-        </div>
+        ) : null}
 
         {/* ADD NEW */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -238,7 +275,10 @@ export default async function AdminGallery(props: {
             <Field name="sort_order" label="Sort" placeholder="1" className="md:col-span-1" />
 
             <div className="md:col-span-6">
-              <button className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
+              <button
+                type="submit"
+                className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
+              >
                 Add
               </button>
             </div>
@@ -249,65 +289,78 @@ export default async function AdminGallery(props: {
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="font-semibold mb-4">Current gallery</div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            {(gallery as GalleryRow[]).map((g) => (
-              <div key={g.id} className="rounded-xl border border-gray-200 p-4">
-                <div className="rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={g.image_url} alt="" className="w-full h-52 object-cover" />
-                </div>
-
-                <form className="grid grid-cols-6 gap-3 mt-4">
-                  <input type="hidden" name="key" value={key} />
-                  <input type="hidden" name="id" value={g.id} />
-                  <input type="hidden" name="client_id" value={client.id} />
-
-                  <Input name="image_url" label="URL" defaultValue={g.image_url} className="col-span-6" />
-                  <Input name="sort_order" label="Sort" defaultValue={g.sort_order ?? ""} className="col-span-2" />
-
-                  <div className="col-span-4 flex items-end justify-end gap-2">
-                    <button
-                      formAction={moveUp}
-                      className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-                      title="Move up"
-                      type="submit"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      formAction={moveDown}
-                      className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-                      title="Move down"
-                      type="submit"
-                    >
-                      ↓
-                    </button>
-
-                    <button
-                      formAction={updateImage}
-                      className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-                      type="submit"
-                    >
-                      Save
-                    </button>
-
-                    <button
-                      formAction={deleteImage}
-                      className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
-                      type="submit"
-                    >
-                      Delete
-                    </button>
+          {!gallery?.length ? (
+            <div className="text-sm text-gray-600">No images yet.</div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4">
+              {(gallery as GalleryRow[]).map((g) => (
+                <div key={g.id} className="rounded-xl border border-gray-200 p-4">
+                  <div className="rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={g.image_url} alt="" className="w-full h-52 object-cover" />
                   </div>
-                </form>
-              </div>
-            ))}
-          </div>
+
+                  <form className="grid grid-cols-6 gap-3 mt-4">
+                    <input type="hidden" name="key" value={key} />
+                    <input type="hidden" name="id" value={g.id} />
+                    <input type="hidden" name="client_id" value={client.id} />
+
+                    <Input name="image_url" label="URL" defaultValue={g.image_url} className="col-span-6" />
+                    <Input name="sort_order" label="Sort" defaultValue={g.sort_order ?? ""} className="col-span-2" />
+
+                    <div className="col-span-4 flex items-end justify-end gap-2">
+                      <button
+                        formAction={moveUp}
+                        type="submit"
+                        className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
+                        title="Move up"
+                        aria-label="Move up"
+                      >
+                        ↑
+                      </button>
+
+                      <button
+                        formAction={moveDown}
+                        type="submit"
+                        className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
+                        title="Move down"
+                        aria-label="Move down"
+                      >
+                        ↓
+                      </button>
+
+                      <button
+                        formAction={updateImage}
+                        type="submit"
+                        className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
+                      >
+                        Save
+                      </button>
+
+                      <button
+                        formAction={deleteImage}
+                        type="submit"
+                        className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
+
+        <p className="text-sm text-gray-500">
+          * Засега достъпът е с <code>?key=</code>. По-късно го заменяме с login.
+        </p>
       </div>
     </main>
   );
 }
+
+/* ---------------- UI helpers ---------------- */
 
 function Field({
   name,
