@@ -9,7 +9,14 @@ export default function AdminTopNav({
   slug: string;
   businessName: string;
   keyParam: string;
-  active: "dashboard" | "settings" | "services" | "gallery" | "reviews";
+  active:
+    | "dashboard"
+    | "settings"
+    | "services"
+    | "gallery"
+    | "reviews"
+    | "bookings"
+    | "availability";
 }) {
   const adminBase = `/admin/${slug}`;
   const q = `?key=${encodeURIComponent(keyParam)}`;
@@ -19,6 +26,9 @@ export default function AdminTopNav({
   const servicesUrl = `${adminBase}/services${q}`;
   const galleryUrl = `${adminBase}/gallery${q}`;
   const reviewsUrl = `${adminBase}/reviews${q}`;
+  const bookingsUrl = `${adminBase}/bookings${q}`;
+  const availabilityUrl = `${adminBase}/availability${q}`;
+
   const publicUrl = `/${slug}`;
 
   const pill = (isActive: boolean) =>
@@ -69,6 +79,20 @@ export default function AdminTopNav({
           className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "reviews")}`}
         >
           Reviews
+        </Link>
+
+        <Link
+          href={bookingsUrl}
+          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "bookings")}`}
+        >
+          Bookings
+        </Link>
+
+        <Link
+          href={availabilityUrl}
+          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "availability")}`}
+        >
+          Availability
         </Link>
 
         {/* Public */}
