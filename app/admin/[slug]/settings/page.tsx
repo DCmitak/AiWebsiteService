@@ -1,15 +1,49 @@
-// app/admin/[slug]/settings/page.tsx
+//app\admin\[slug]\settings\page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AdminTopNav from "@/app/admin/_components/AdminTopNav";
 
+type SiteSettingsRow = {
+  client_id: string;
+  theme_preset?: string | null;
+  primary_color?: string | null;
+
+  phone?: string | null;
+  booking_url?: string | null;
+  address?: string | null;
+  working_hours?: string | null;
+
+  logo_url?: string | null;
+  hero_image_url?: string | null;
+
+  category_label?: string | null;
+  hero_title?: string | null;
+  hero_subtitle?: string | null;
+
+  about_text?: string | null;
+
+  google_maps_url?: string | null;
+
+  instagram_url?: string | null;
+  facebook_url?: string | null;
+  tiktok_url?: string | null;
+  youtube_url?: string | null;
+
+  brands?: unknown;
+
+  // NEW:
+  pricing_layout?: "v1" | "v2" | string | null;
+
+  updated_at?: string | null;
+};
+
 export default async function AdminSettings(props: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ key?: string; saved?: string }>;
+  searchParams: Promise<{ key?: string; toast?: string }>;
 }) {
-  const [{ slug }, { key, saved }] = await Promise.all([props.params, props.searchParams]);
+  const [{ slug }, { key, toast }] = await Promise.all([props.params, props.searchParams]);
 
   if (!key || key !== process.env.ADMIN_KEY) {
     return <div className="p-8">Unauthorized</div>;
@@ -21,7 +55,7 @@ export default async function AdminSettings(props: {
     .from("clients")
     .select("id, slug, business_name")
     .eq("slug", slug)
-    .maybeSingle();
+    .maybeSingle<{ id: string; slug: string; business_name: string }>();
 
   if (clientErr) return <div className="p-8">DB error: {clientErr.message}</div>;
   if (!client) return <div className="p-8">Client not found</div>;
@@ -30,7 +64,7 @@ export default async function AdminSettings(props: {
     .from("site_settings")
     .select("*")
     .eq("client_id", client.id)
-    .maybeSingle();
+    .maybeSingle<SiteSettingsRow>();
 
   if (settingsErr) return <div className="p-8">DB error: {settingsErr.message}</div>;
 
@@ -43,8 +77,11 @@ export default async function AdminSettings(props: {
     const clientId = formData.get("client_id")?.toString();
     if (!clientId) throw new Error("Missing client_id");
 
-    // theme_preset is NOT NULL -> always send a value
     const themePreset = (formData.get("theme_preset")?.toString() || "").trim() || "luxe";
+
+    // NEW: services/pricing layout
+    const rawPricingLayout = (formData.get("pricing_layout")?.toString() || "v1").trim().toLowerCase();
+    const pricingLayout = rawPricingLayout === "v2" ? "v2" : "v1";
 
     const brandsRaw = formData.get("brands")?.toString() || "[]";
     let brands: any[] = [];
@@ -90,6 +127,9 @@ export default async function AdminSettings(props: {
       // JSON
       brands,
 
+      // NEW
+      pricing_layout: pricingLayout,
+
       updated_at: new Date().toISOString(),
     };
 
@@ -100,20 +140,31 @@ export default async function AdminSettings(props: {
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/settings`);
 
-    // Important: this reloads the page so defaultValue shows the new value
-    redirect(`/admin/${slug}/settings?key=${encodeURIComponent(key)}&saved=1`);
+    redirect(`/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=saved`);
   }
+
+  const toastText =
+    toast === "saved"
+      ? "Saved successfully."
+      : toast === "error"
+      ? "Something went wrong."
+      : null;
 
   const publicUrl = `/${slug}`;
 
   return (
     <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
       <div className="max-w-6xl mx-auto space-y-6">
-        <AdminTopNav slug={client.slug} businessName={`${client.business_name} — Settings`} keyParam={key} active="settings" />
+        <AdminTopNav
+          slug={client.slug}
+          businessName={`${client.business_name} — Settings`}
+          keyParam={key}
+          active="settings"
+        />
 
-        {saved === "1" ? (
+        {toastText ? (
           <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            Saved successfully.
+            {toastText}
           </div>
         ) : null}
 
@@ -133,10 +184,30 @@ export default async function AdminSettings(props: {
                 <option value="minimal">Minimal (чист/универсален)</option>
               </select>
             </label>
+
+            {/* NEW */}
+            <label className="block space-y-1">
+              <div className="text-sm text-gray-600">Services / Pricing layout</div>
+              <select
+                name="pricing_layout"
+                defaultValue={settings?.pricing_layout || "v1"}
+                className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+              >
+                <option value="v1">V1 – Tabs (simple)</option>
+                <option value="v2">V2 – Fancy (categories left on desktop)</option>
+              </select>
+              <div className="text-xs text-gray-500">
+                Това управлява кой ServicesTabs компонент да се използва (v1/v2).
+              </div>
+            </label>
           </Card>
 
           <Card title="Основни">
-            <Field name="primary_color" label="Primary color (#hex)" defaultValue={settings?.primary_color || "#dca263"} />
+            <Field
+              name="primary_color"
+              label="Primary color (#hex)"
+              defaultValue={settings?.primary_color || "#dca263"}
+            />
             <Field name="phone" label="Телефон" defaultValue={settings?.phone || ""} />
             <Field name="booking_url" label="Booking URL (временно)" defaultValue={settings?.booking_url || ""} />
             <Field name="address" label="Адрес" defaultValue={settings?.address || ""} />
@@ -145,7 +216,11 @@ export default async function AdminSettings(props: {
 
           <Card title="Branding">
             <Field name="logo_url" label="Logo URL" defaultValue={settings?.logo_url || ""} />
-            <Field name="hero_image_url" label="Hero Image URL" defaultValue={settings?.hero_image_url || ""} />
+            <Field
+              name="hero_image_url"
+              label="Hero Image URL (priority)"
+              defaultValue={settings?.hero_image_url || ""}
+            />
 
             <Field
               name="category_label"

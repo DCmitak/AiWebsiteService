@@ -1,16 +1,14 @@
 // app/[slug]/themes/Minimal.tsx
-import ServicesTabs from "../ServicesTabs";
-import type { PublicPayload, Review, Service } from "../types";
+import type { PublicPayload, Review, Service, GalleryImage } from "../types";
 import ReviewsCarousel from "./ReviewsCarousel";
+import ServicesTabs from "../ServicesTabs";
+import ServicesTabsV2 from "../ServicesTabsV2";
 
-export default function MinimalTheme({
-  client,
-  settings,
-  services,
-  gallery,
-  reviews,
-}: PublicPayload) {
+
+export default function MinimalTheme({ client, settings, services, gallery, reviews }: PublicPayload) {
   const primary = settings?.primary_color || "#B2773D";
+  const pricingLayout = (settings?.pricing_layout || "v1").toLowerCase();
+
   const bg = "#F3D8D4";
   const surface = "#F7EFEE";
   const ink = "#1F2430";
@@ -30,11 +28,6 @@ export default function MinimalTheme({
   const tiktok = settings?.tiktok_url || "";
   const youtube = settings?.youtube_url || "";
 
-  const heroImg =
-    settings?.hero_image_url ||
-    (Array.isArray(gallery) && gallery[0]?.image_url) ||
-    "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=1800&q=80";
-
   const mapLink =
     mapUrl && typeof mapUrl === "string"
       ? mapUrl.includes("output=embed")
@@ -43,25 +36,56 @@ export default function MinimalTheme({
       : "";
 
   const svc = (Array.isArray(services) ? services : []) as Service[];
-  const gal = Array.isArray(gallery) ? gallery : [];
+  const gal = (Array.isArray(gallery) ? gallery : []) as GalleryImage[];
+
+  // --- GALLERY SECTIONS (semantic, no magic indices) ---
+  const heroGallery = gal.find((x) => (x.section || "").toString().toLowerCase() === "hero");
+  const work = gal.filter((x) => (x.section || "work").toString().toLowerCase() === "work");
+  const venue = gal.filter((x) => (x.section || "").toString().toLowerCase() === "venue");
+
+  const fallbackHero =
+    "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=1800&q=80";
+
+  const heroImg = settings?.hero_image_url || heroGallery?.image_url || work[0]?.image_url || fallbackHero;
+
+  const aboutImg =
+    venue[0]?.image_url ||
+    work[0]?.image_url ||
+    "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=1800&q=80";
+
+  const pricingImg =
+    work[1]?.image_url ||
+    work[0]?.image_url ||
+    venue[0]?.image_url ||
+    "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=1800&q=80";
 
   // IMPORTANT: ONLY DB reviews (payload)
   const reviewsFinal: Review[] = Array.isArray(reviews) ? (reviews as Review[]) : [];
 
-  // Featured services: 3 карти (услуги + снимки от gallery)
-  const featured = pickFeaturedServices(svc, 3);
-  const featuredWithImages = featured.map((s, i) => ({
+  // Featured services: 3 карти (услуги + снимки от WORK gallery)
+  const featuredManual = svc
+    .filter((s) => !!s.is_featured)
+    .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999))
+    .slice(0, 3);
+
+  const featuredAuto = pickFeaturedServices(svc, 3);
+
+  const featuredFinal = featuredManual.length ? featuredManual : featuredAuto;
+
+  const featuredWithImages = featuredFinal.map((s, i) => ({
     ...s,
     image_url:
-      (gal[i]?.image_url as string | undefined) ||
-      (gal[(i + 3) % Math.max(1, gal.length)]?.image_url as string | undefined) ||
+      (s.featured_image_url || "").trim() ||
+      work[i]?.image_url ||
+      work[(i + 3) % Math.max(1, work.length)]?.image_url ||
       heroImg,
   }));
+
 
   // Hero copy from admin (optional)
   const heroTitle = (settings?.hero_title || "").trim();
   const heroSubtitle = (settings?.hero_subtitle || "").trim();
-  const categoryLabel = (settings?.category_label || "").trim() || "МАНИКЮР И ПЕДИКЮР";
+  const categoryLabel = (settings?.category_label || "").trim() || "УСЛУГИ";
   const heroFeatures = Array.isArray(settings?.hero_features) ? settings!.hero_features! : [];
 
   return (
@@ -98,6 +122,9 @@ export default function MinimalTheme({
             </a>
             <a href="#pricing" className="hover:text-black">
               Цени
+            </a>
+            <a href="#gallery" className="hover:text-black">
+              Галерия
             </a>
             <a href="#reviews" className="hover:text-black">
               Отзиви
@@ -143,11 +170,11 @@ export default function MinimalTheme({
                   heroTitle
                 ) : (
                   <>
-                    Наслади се на
+                    Добре дошли в
                     <br />
-                    перфектния маникюр
+                    {client.business_name}
                     <br />
-                    в {client.city}
+                    ({client.city})
                   </>
                 )}
               </h1>
@@ -182,9 +209,9 @@ export default function MinimalTheme({
                 {(heroFeatures.length
                   ? heroFeatures.slice(0, 3).map((x) => ({ t: x.title, d: x.text }))
                   : [
-                      { t: "Стерилни инструменти", d: "Еднократни пили и стерилизация." },
-                      { t: "Експертен екип", d: "Бърза, прецизна и безопасна работа." },
-                      { t: "100+ цвята", d: "Избери нюанс, който ти подхожда." },
+                      { t: "Професионално отношение", d: "Фокус върху качество и детайл." },
+                      { t: "Чистота и комфорт", d: "Уютна атмосфера и грижа за клиента." },
+                      { t: "Лесно записване", d: "Онлайн букинг и бърза връзка." },
                     ]
                 ).map((x) => (
                   <div key={x.t} className="rounded-2xl bg-white/45 p-4 shadow-sm ring-1 ring-black/10">
@@ -206,7 +233,7 @@ export default function MinimalTheme({
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={heroImg}
-                      alt={settings?.hero_image_alt || "Маникюр"}
+                      alt={settings?.hero_image_alt || "Hero"}
                       className="h-[560px] w-full object-cover md:h-[680px]"
                     />
                   </div>
@@ -221,7 +248,6 @@ export default function MinimalTheme({
           </div>
         </div>
 
-        <div className="h-20 bg-[#F6EEE9]" />
       </section>
 
       {/* FEATURED SERVICES */}
@@ -233,7 +259,7 @@ export default function MinimalTheme({
               Препоръчани процедури
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-[16px] leading-7 text-black/60">
-              Маникюр, педикюр и терапии — подбрани, за да изглеждаш и да се чувстваш прекрасно.
+              Подбрани услуги, за да изглеждаш и да се чувстваш прекрасно.
             </p>
           </div>
 
@@ -273,14 +299,7 @@ export default function MinimalTheme({
             <div className="lg:col-span-7">
               <div className="bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] h-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={
-                    (gal[1]?.image_url as string | undefined) ||
-                    "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=1800&q=80"
-                  }
-                  alt=""
-                  className="w-full h-[420px] md:h-[520px] object-cover"
-                />
+                <img src={aboutImg} alt="" className="w-full h-[420px] md:h-[520px] object-cover" />
               </div>
             </div>
 
@@ -327,52 +346,146 @@ export default function MinimalTheme({
         </div>
       </section>
 
-      {/* PRICING (TABS like Luxe) */}
-      <section id="pricing" className="bg-[#F6EEE9]">
+{/* PRICING */}
+{pricingLayout === "v2" ? (
+  // =========================
+  // V2: APP-STYLE (NO IMAGE)
+  // =========================
+  <section id="pricing" className="bg-[#F6EEE9] border-t border-black/10">
+    <div className="mx-auto max-w-4xl px-6 py-14 md:py-18">
+      <div className="flex items-end justify-between gap-6 flex-wrap">
+        <div>
+          <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
+            Цени
+          </div>
+          <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Ценоразпис</h2>
+          <p className="mt-3 opacity-70 max-w-xl">
+            Избери категория, после натисни „Запази час“ на конкретната услуга.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-black/10 bg-white/60 px-4 py-3 text-sm text-black/60">
+          Без плащане онлайн • Плащане в обекта
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <ServicesTabsV2 services={svc} primary={primary} slug={client.slug} />
+      </div>
+
+      <div className="mt-5 text-xs text-black/45">
+        Ако не виждаш свободни часове, провери работното време или избери друга дата.
+      </div>
+    </div>
+  </section>
+) : (
+  // =========================
+  // V1: CLASSIC (WITH IMAGE)
+  // =========================
+  <section id="pricing" className="bg-[#F6EEE9]">
+    <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
+      <div className="grid lg:grid-cols-12 gap-10">
+        <div className="lg:col-span-6">
+          <div className="bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={pricingImg} alt="" className="w-full h-[520px] object-cover" />
+          </div>
+        </div>
+
+        <div className="lg:col-span-6">
+          <div style={{ background: bg }} className="border border-black/10 p-8 md:p-10 h-full">
+            <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
+              Цени
+            </div>
+
+            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Ценоразпис</h2>
+
+            <p className="mt-4 opacity-75 max-w-xl">Избери услуга и запази час лесно.</p>
+
+            <div className="mt-8">
+              <ServicesTabs services={svc} primary={primary} slug={client.slug} />
+            </div>
+
+            <div className="mt-10">
+              <a
+                href={booking}
+                className="inline-flex px-6 py-3 rounded-md text-white font-semibold shadow-sm hover:shadow-md transition"
+                style={{ background: primary }}
+              >
+                Запази час
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+)}
+
+
+      {/* GALLERY */}
+      <section id="gallery" style={{ background: surface }} className="border-t border-black/10">
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
-          <div className="grid lg:grid-cols-12 gap-10">
-            <div className="lg:col-span-6">
-              <div className="bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={
-                    (gal[3]?.image_url as string | undefined) ||
-                    "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=1800&q=80"
-                  }
-                  alt=""
-                  className="w-full h-[520px] object-cover"
-                />
-              </div>
+          <div className="text-center">
+            <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
+              Галерия
+            </div>
+            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Нашата работа и обект</h2>
+            <p className="mt-3 opacity-70">Подбрани снимки, които най-добре показват стила ни.</p>
+          </div>
+
+          {/* Work */}
+          <div className="mt-12">
+            <div className="flex items-end justify-between gap-4">
+              <h3 className="font-serif text-2xl tracking-tight">Снимки от работата ни</h3>
+              <div className="text-sm opacity-60">{work.length ? `${work.length} снимки` : "—"}</div>
             </div>
 
-            <div className="lg:col-span-6">
-              <div style={{ background: bg }} className="border border-black/10 p-8 md:p-10 h-full">
-                <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
-                  Цени
-                </div>
-
-                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Ценоразпис</h2>
-
-                <p className="mt-4 opacity-75 max-w-xl">
-                  Перфектният резултат идва от внимание към детайла и качествени продукти.
-                </p>
-
-                <div className="mt-8">
-                  {/* Same tabs component as Luxe */}
-                  <ServicesTabs services={svc} primary={primary} bookingUrl={booking} />
-                </div>
-
-                <div className="mt-10">
+            {work.length ? (
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {work.slice(0, 9).map((img) => (
                   <a
-                    href={booking}
-                    className="inline-flex px-6 py-3 rounded-md text-white font-semibold shadow-sm hover:shadow-md transition"
-                    style={{ background: primary }}
+                    key={img.id}
+                    href={img.image_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm hover:shadow-md transition"
                   >
-                    Запази час
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.image_url} alt="" className="h-64 w-full object-cover" />
                   </a>
-                </div>
+                ))}
               </div>
+            ) : (
+              <div className="mt-5 text-sm opacity-70">Няма качени снимки (секция: work).</div>
+            )}
+          </div>
+
+          {/* Venue */}
+          <div className="mt-14">
+            <div className="flex items-end justify-between gap-4">
+              <h3 className="font-serif text-2xl tracking-tight">Галерия на обекта</h3>
+              <div className="text-sm opacity-60">{venue.length ? `${venue.length} снимки` : "—"}</div>
             </div>
+
+            {venue.length ? (
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {venue.slice(0, 9).map((img) => (
+                  <a
+                    key={img.id}
+                    href={img.image_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm hover:shadow-md transition"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.image_url} alt="" className="h-64 w-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-5 text-sm opacity-70">Няма качени снимки (секция: venue).</div>
+            )}
           </div>
         </div>
       </section>
@@ -386,7 +499,6 @@ export default function MinimalTheme({
             </div>
 
             <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Клиентите за нас</h2>
-
             <p className="mt-3 opacity-70">Благодарим за всяко мнение!</p>
           </div>
 

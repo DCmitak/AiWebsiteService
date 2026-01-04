@@ -1,6 +1,8 @@
 // app/[slug]/themes/Luxe.tsx
-import ServicesTabs from "../ServicesTabs";
 import type { PublicPayload, Review, Service } from "../types";
+import ServicesTabs from "../ServicesTabs";
+import ServicesTabsV2 from "../ServicesTabsV2";
+
 
 export default function LuxeTheme({ client, settings, services, gallery, reviews }: PublicPayload) {
   const primary = settings?.primary_color || "#dca263";
@@ -273,7 +275,7 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
           </a>
         </div>
 
-        <ServicesTabs services={svc} primary={primary} bookingUrl="#book" />
+        <ServicesTabs services={svc} primary={primary} slug={client.slug} />
       </section>
 
       {/* GALLERY */}

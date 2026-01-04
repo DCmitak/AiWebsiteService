@@ -8,6 +8,9 @@ export type Service = {
   duration_min: number | null;
   price_from: number | null;
   sort_order: number | null;
+  is_featured?: boolean | null;
+  featured_image_url?: string | null;
+
 };
 
 export type Review = {
@@ -21,6 +24,7 @@ export type GalleryImage = {
   id: string;
   image_url: string;
   sort_order: number | null;
+  section?: "hero" | "work" | "venue" | (string & {}) | null;
 };
 
 export type SiteSettings = {
@@ -29,9 +33,7 @@ export type SiteSettings = {
   theme_preset?: "luxe" | "minimal" | string | null;
   primary_color?: string | null;
 
-  // ✅ добавено (ти го записваш от admin)
   logo_url?: string | null;
-
   hero_image_url?: string | null;
 
   booking_url?: string | null;
@@ -50,24 +52,22 @@ export type SiteSettings = {
   tiktok_url?: string | null;
   youtube_url?: string | null;
 
-  // HERO copy
   category_label?: string | null;
   hero_title?: string | null;
   hero_subtitle?: string | null;
 
-
-  // Optionals
   hero_image_alt?: string;
 
-  // Reviews managed from admin/settings
+  pricing_layout?: "v1" | "v2" | null;
+
+
   reviews?: Array<{
     id?: string;
     author: string;
-    rating: number; // 1..5
+    rating: number;
     text: string;
   }>;
 
-  // Features under hero (ако искаш да са админ-управляеми)
   hero_features?: Array<{
     title: string;
     text: string;
