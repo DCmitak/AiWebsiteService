@@ -4,6 +4,14 @@ import AdminTopNav from "@/app/admin/_components/AdminTopNav";
 import AdminToast from "@/app/admin/_components/AdminToast";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { DateTime } from "luxon";
+
+import BookingsCalendar, { type CalendarEvent } from "./_components/BookingsCalendar";
+import BookingsPrimaryNav from "./_components/BookingsPrimaryNav";
+import BookingsCalendarControls from "./_components/BookingsCalendarControls";
+import BookingsTableControls from "./_components/BookingsTableControls";
+
+import "./_components/BookingsToolbar.css";
 
 type ClientRow = { id: string; slug: string; business_name: string };
 
@@ -21,7 +29,20 @@ type BookingRow = {
   customer_note: string | null;
   created_at: string;
   service?: { name: string } | null;
+  staff?: { name: string } | null;
 };
+
+type TimeOffRow = {
+  id: string;
+  client_id: string;
+  staff_id: string;
+  start_at: string;
+  end_at: string;
+  reason: string | null;
+  staff?: { name: string } | null;
+};
+
+type StaffRow = { id: string; name: string; is_active: boolean; is_default: boolean };
 
 function fmtDT(iso: string, timeZone = "Europe/Sofia") {
   const dt = new Date(iso);
@@ -44,11 +65,60 @@ function fmtDT(iso: string, timeZone = "Europe/Sofia") {
   return `${time}, ${date}`;
 }
 
+function buildBaseReturnTo({
+  slug,
+  key,
+  view,
+  mode,
+  date,
+  staff,
+  status,
+}: {
+  slug: string;
+  key: string;
+  view: string;
+  mode?: string;
+  date?: string;
+  staff?: string;
+  status?: string;
+}) {
+  const sp = new URLSearchParams();
+  sp.set("key", key);
+  sp.set("view", view || "table");
+
+  if (view === "calendar") {
+    sp.set("mode", (mode || "week").toLowerCase());
+    if (date) sp.set("date", date);
+    if (staff) sp.set("staff", staff);
+  } else {
+    sp.set("status", (status || "pending").toLowerCase());
+  }
+
+  return `/admin/${slug}/bookings?${sp.toString()}`;
+}
+
+function normWeekMonday(dateISO: string, tz: string) {
+  const d = DateTime.fromISO(dateISO, { zone: tz }).startOf("day");
+  const monday = d.minus({ days: (d.weekday + 6) % 7 }).startOf("day");
+  return monday.toISODate()!;
+}
+
 export default async function AdminBookings(props: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ key?: string; toast?: string; status?: string }>;
+  searchParams: Promise<{
+    key?: string;
+    toast?: string;
+    status?: string;
+    view?: string;
+    mode?: string;
+    date?: string;
+    staff?: string;
+  }>;
 }) {
-  const [{ slug }, { key, toast, status }] = await Promise.all([props.params, props.searchParams]);
+  const [{ slug }, { key, toast, status, view, mode, date, staff }] = await Promise.all([
+    props.params,
+    props.searchParams,
+  ]);
 
   if (!key || key !== process.env.ADMIN_KEY) {
     return <div className="p-8">Unauthorized</div>;
@@ -67,37 +137,39 @@ export default async function AdminBookings(props: {
   }
 
   const clientId = client.id;
+  const tz = "Europe/Sofia";
 
-  // Filters
+  const activeView = (view || "table").toLowerCase() === "calendar" ? "calendar" : "table";
+  const activeMode = ((mode || "week").toLowerCase() === "day" ? "day" : "week") as "week" | "day";
+  const activeStaff = staff || "all";
   const filter = (status || "pending").toLowerCase();
-  const nowIso = new Date().toISOString();
 
-  let q = sb
-    .from("bookings")
-    .select(
-      "id, client_id, staff_id, service_id, start_at, end_at, status, customer_name, customer_phone, customer_email, customer_note, created_at, service:services(name)"
-    )
-    .eq("client_id", clientId);
+  const safeCalendarDate =
+    (date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : DateTime.now().setZone(tz).toISODate()!)!;
 
-  if (filter === "pending") {
-    q = q.eq("status", "pending").order("start_at", { ascending: true });
-  } else if (filter === "upcoming") {
-    q = q.eq("status", "confirmed").gte("start_at", nowIso).order("start_at", { ascending: true });
-  } else if (filter === "past") {
-    q = q.eq("status", "confirmed").lt("start_at", nowIso).order("start_at", { ascending: false });
-  } else if (filter === "cancelled") {
-    q = q.eq("status", "cancelled").order("start_at", { ascending: false });
-  } else {
-    q = q.order("start_at", { ascending: false });
-  }
+  const normalizedCalendarDate = activeMode === "week" ? normWeekMonday(safeCalendarDate, tz) : safeCalendarDate;
 
-  const { data: bookings, error: bookingsErr } = await q.returns<BookingRow[]>();
-  const list = bookings || [];
+  const tableHref = `/admin/${slug}/bookings?key=${key}&view=table&status=${encodeURIComponent(filter || "pending")}`;
+  const calendarHref = `/admin/${slug}/bookings?key=${key}&view=calendar&mode=${activeMode}&date=${normalizedCalendarDate}&staff=${encodeURIComponent(
+    activeStaff
+  )}`;
+
+  const returnToBase = buildBaseReturnTo({
+    slug,
+    key,
+    view: activeView,
+    mode: activeMode,
+    date: normalizedCalendarDate,
+    staff: activeStaff,
+    status: filter,
+  });
 
   async function cancelBooking(formData: FormData) {
     "use server";
     const bookingId = String(formData.get("booking_id") || "");
-    if (!bookingId) redirect(`/admin/${slug}/bookings?key=${key}&toast=error`);
+    const returnTo = String(formData.get("return_to") || returnToBase);
+
+    if (!bookingId) redirect(`${returnTo}&toast=error`);
 
     const sb2 = supabaseServer();
 
@@ -107,32 +179,23 @@ export default async function AdminBookings(props: {
       .eq("id", bookingId)
       .maybeSingle<{ id: string; client_id: string; status: string }>();
 
-    if (!b || b.client_id !== clientId) {
-      redirect(`/admin/${slug}/bookings?key=${key}&toast=error`);
-    }
+    if (!b || b.client_id !== clientId) redirect(`${returnTo}&toast=error`);
+    if (b.status === "cancelled") redirect(`${returnTo}&toast=cancelled`);
 
-    if (b.status === "cancelled") {
-      redirect(`/admin/${slug}/bookings?key=${key}&status=${filter}&toast=cancelled`);
-    }
+    const { error } = await sb2.from("bookings").update({ status: "cancelled" }).eq("id", bookingId).eq("client_id", clientId);
 
-    const { error } = await sb2
-      .from("bookings")
-      .update({ status: "cancelled" })
-      .eq("id", bookingId)
-      .eq("client_id", clientId);
-
-    if (error) {
-      redirect(`/admin/${slug}/bookings?key=${key}&toast=error`);
-    }
+    if (error) redirect(`${returnTo}&toast=error`);
 
     revalidatePath(`/admin/${slug}/bookings`);
-    redirect(`/admin/${slug}/bookings?key=${key}&status=${filter}&toast=cancelled`);
+    redirect(`${returnTo}&toast=cancelled`);
   }
 
   async function confirmBooking(formData: FormData) {
     "use server";
     const bookingId = String(formData.get("booking_id") || "");
-    if (!bookingId) redirect(`/admin/${slug}/bookings?key=${key}&toast=error`);
+    const returnTo = String(formData.get("return_to") || returnToBase);
+
+    if (!bookingId) redirect(`${returnTo}&toast=error`);
 
     const sb2 = supabaseServer();
 
@@ -142,21 +205,10 @@ export default async function AdminBookings(props: {
       .eq("id", bookingId)
       .maybeSingle<{ id: string; client_id: string; status: string }>();
 
-    if (!b || b.client_id !== clientId) {
-      redirect(`/admin/${slug}/bookings?key=${key}&toast=error`);
-    }
+    if (!b || b.client_id !== clientId) redirect(`${returnTo}&toast=error`);
+    if (b.status === "confirmed") redirect(`${returnTo}&toast=confirmed`);
+    if (b.status === "cancelled") redirect(`${returnTo}&toast=error`);
 
-    // If already confirmed -> just show toast
-    if (b.status === "confirmed") {
-      redirect(`/admin/${slug}/bookings?key=${key}&status=${filter}&toast=confirmed`);
-    }
-
-    // Do NOT allow confirm from cancelled
-    if (b.status === "cancelled") {
-      redirect(`/admin/${slug}/bookings?key=${key}&status=${filter}&toast=error`);
-    }
-
-    // Allow confirm only from pending
     const { error } = await sb2
       .from("bookings")
       .update({ status: "confirmed" })
@@ -164,62 +216,247 @@ export default async function AdminBookings(props: {
       .eq("client_id", clientId)
       .eq("status", "pending");
 
-    if (error) {
-      redirect(`/admin/${slug}/bookings?key=${key}&toast=error`);
-    }
+    if (error) redirect(`${returnTo}&toast=error`);
 
     revalidatePath(`/admin/${slug}/bookings`);
-    redirect(`/admin/${slug}/bookings?key=${key}&status=${filter}&toast=confirmed`);
+    redirect(`${returnTo}&toast=confirmed`);
   }
 
-  return (
-    <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <AdminTopNav slug={slug} businessName={client.business_name} keyParam={key} active="bookings" />
+  // staff options
+  const { data: staffRows } = await sb
+    .from("staff")
+    .select("id, name, is_active, is_default")
+    .eq("client_id", clientId)
+    .order("is_default", { ascending: false })
+    .order("name", { ascending: true })
+    .returns<StaffRow[]>();
 
-        {/* унифициран toast компонент */}
-        <AdminToast toast={toast} />
+  const staffOptions = (staffRows || []).filter((s) => s.is_active).map((s) => ({ id: s.id, name: s.name }));
 
-        <div className="bg-white p-6 rounded shadow space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold">Резервации</h1>
-              <div className="text-sm text-gray-600">Pending → Confirm / Cancel (soft cancel).</div>
+  // ---------------- CALENDAR VIEW ----------------
+  if (activeView === "calendar") {
+    // Initial events (first load only). After that: BookingsCalendar fetches via API route.
+    const center = DateTime.fromISO(normalizedCalendarDate, { zone: tz }).startOf("day");
+    const rangeStart = activeMode === "day" ? center : center; // already Monday when week
+    const rangeEnd = activeMode === "day" ? rangeStart.plus({ days: 1 }) : rangeStart.plus({ days: 7 });
+
+    const fromIso = rangeStart.toUTC().toISO()!;
+    const toIso = rangeEnd.toUTC().toISO()!;
+
+    let qb = sb
+      .from("bookings")
+      .select(
+        "id, client_id, staff_id, service_id, start_at, end_at, status, customer_name, customer_phone, customer_email, customer_note, created_at, service:services(name), staff:staff(name)"
+      )
+      .eq("client_id", clientId)
+      .gte("start_at", fromIso)
+      .lt("start_at", toIso);
+
+    if (activeStaff !== "all") qb = qb.eq("staff_id", activeStaff);
+
+    const { data: bookings } = await qb.order("start_at", { ascending: true }).returns<BookingRow[]>();
+
+    let qt = sb
+      .from("staff_time_off")
+      .select("id, client_id, staff_id, start_at, end_at, reason, staff:staff(name)")
+      .eq("client_id", clientId)
+      .gte("start_at", fromIso)
+      .lt("start_at", toIso);
+
+    if (activeStaff !== "all") qt = qt.eq("staff_id", activeStaff);
+
+    const { data: timeOff } = await qt.order("start_at", { ascending: true }).returns<TimeOffRow[]>();
+
+    const initialEvents: CalendarEvent[] = [
+      ...(timeOff || []).map((t) => ({
+        id: `timeoff:${t.id}`,
+        title: t.reason ? `Blocked: ${t.reason}` : "Blocked",
+        start: t.start_at,
+        end: t.end_at,
+        display: "background" as const,
+        extendedProps: {
+          type: "timeoff" as const,
+          timeoff: { reason: t.reason, staff_name: t.staff?.name || undefined },
+        },
+      })),
+      ...(bookings || []).map((b) => ({
+        id: `booking:${b.id}`,
+        title: b.service?.name || "Услуга",
+        start: b.start_at,
+        end: b.end_at,
+        extendedProps: {
+          type: "booking" as const,
+          status: b.status,
+          booking: {
+            id: b.id,
+            status: b.status,
+            start_at: b.start_at,
+            end_at: b.end_at,
+            customer_name: b.customer_name,
+            customer_phone: b.customer_phone,
+            customer_email: b.customer_email,
+            customer_note: b.customer_note,
+            service_name: b.service?.name || "—",
+            staff_name: b.staff?.name || undefined,
+          },
+        },
+      })),
+    ];
+
+    return (
+      <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <AdminTopNav slug={slug} businessName={client.business_name} keyParam={key} active="bookings" />
+          <AdminToast toast={toast} />
+
+          <div className="bg-white p-6 rounded shadow space-y-4">
+            <div className="bookings-headbar">
+              <div className="left">
+                <div className="title">Резервации</div>
+                <div className="subtitle">Преглед и управление на резервации.</div>
+              </div>
+
+              <BookingsPrimaryNav tableHref={tableHref} calendarHref={calendarHref} activeView="calendar" />
             </div>
 
-            <div className="flex gap-2 flex-wrap">
-              {[
-                { id: "pending", label: "Чакащи" },
-                { id: "upcoming", label: "Предстоящи" },
-                { id: "past", label: "Минали" },
-                { id: "cancelled", label: "Отказани" },
-              ].map((t) => {
-                const isActive = filter === t.id;
-                const href = `/admin/${slug}/bookings?key=${key}&status=${t.id}`;
+            <BookingsCalendar
+              slug={slug}
+              keyParam={key}
+              mode={activeMode}
+              date={normalizedCalendarDate}
+              staff={activeStaff}
+              initialEvents={initialEvents}
+              staffOptions={staffOptions}
+              returnToBase={returnToBase}
+              confirmAction={confirmBooking}
+              cancelAction={cancelBooking}
+            />
+
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ---------------- TABLE VIEW ----------------
+const nowIso = DateTime.now().setZone(tz).toUTC().toISO()!;
+
+let q = sb
+  .from("bookings")
+  .select(
+    "id, client_id, staff_id, service_id, start_at, end_at, status, customer_name, customer_phone, customer_email, customer_note, created_at, service:services(name), staff:staff(name)"
+  )
+  .eq("client_id", clientId);
+
+if (filter === "pending") {
+  q = q.eq("status", "pending").order("start_at", { ascending: true });
+} else if (filter === "upcoming") {
+  q = q.eq("status", "confirmed").gte("start_at", nowIso).order("start_at", { ascending: true });
+} else if (filter === "past") {
+  q = q.eq("status", "confirmed").lt("start_at", nowIso).order("start_at", { ascending: false });
+} else if (filter === "cancelled") {
+  q = q.eq("status", "cancelled").order("start_at", { ascending: false });
+} else {
+  // all
+  q = q.order("start_at", { ascending: false });
+}
+
+const { data: bookings, error: bookingsErr } = await q.returns<BookingRow[]>();
+const list = bookings || [];
+
+return (
+  <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
+    <div className="max-w-6xl mx-auto space-y-6">
+      <AdminTopNav slug={slug} businessName={client.business_name} keyParam={key} active="bookings" />
+      <AdminToast toast={toast} />
+
+      <div className="bg-white p-6 rounded shadow space-y-4">
+        <div className="bookings-headbar">
+          <div className="left">
+            <div className="title">Резервации</div>
+            <div className="subtitle">Преглед и управление на резервации.</div>
+          </div>
+
+          <BookingsPrimaryNav tableHref={tableHref} calendarHref={calendarHref} activeView="table" />
+        </div>
+
+        <BookingsTableControls slug={slug} keyParam={key} activeStatus={filter} />
+
+        {bookingsErr && <div className="bg-red-100 text-red-800 p-3 rounded">Грешка при зареждане.</div>}
+
+        {list.length === 0 ? (
+          <div className="text-gray-700">
+            Няма резервации за този филтър. Пробвай{" "}
+            <a className="underline" href={tableHref.replace(`status=${encodeURIComponent(filter)}`, "status=all")}>
+              Всички
+            </a>
+            .
+          </div>
+        ) : (
+          <>
+            {/* Mobile cards */}
+            <div className="bookings-table-mobile">
+              {list.map((b) => {
+                const when = fmtDT(b.start_at, tz);
+                const serviceName = b.service?.name || "—";
+                const statusTxt = (b.status || "").toString();
+
                 return (
-                  <a
-                    key={t.id}
-                    href={href}
-                    className={[
-                      "px-3 py-2 rounded border text-sm",
-                      isActive ? "bg-black text-white border-black" : "bg-white hover:bg-gray-50",
-                    ].join(" ")}
-                  >
-                    {t.label}
-                  </a>
+                  <div key={b.id} className="bookings-card">
+                    <div className="bookings-card-top">
+                      <div className="bookings-card-when">{when}</div>
+                      <div className={`bookings-chip bookings-chip--${statusTxt}`}>{statusTxt}</div>
+                    </div>
+
+                    <div className="bookings-card-title">{serviceName}</div>
+                    <div className="bookings-card-sub">{b.customer_name}</div>
+                    <div className="bookings-card-sub">{b.customer_phone}</div>
+                    <div className="bookings-card-sub">{b.customer_email}</div>
+
+                    {b.customer_note ? (
+                      <div className="bookings-card-note">
+                        <span>Бележка:</span> {b.customer_note}
+                      </div>
+                    ) : null}
+
+                    <div className="bookings-card-actions">
+                      {b.status === "pending" ? (
+                        <>
+                          <form action={confirmBooking}>
+                            <input type="hidden" name="booking_id" value={b.id} />
+                            <input type="hidden" name="return_to" value={returnToBase} />
+                            <button type="submit" className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
+                              Confirm
+                            </button>
+                          </form>
+
+                          <form action={cancelBooking}>
+                            <input type="hidden" name="booking_id" value={b.id} />
+                            <input type="hidden" name="return_to" value={returnToBase} />
+                            <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                              Cancel
+                            </button>
+                          </form>
+                        </>
+                      ) : b.status !== "cancelled" ? (
+                        <form action={cancelBooking}>
+                          <input type="hidden" name="booking_id" value={b.id} />
+                          <input type="hidden" name="return_to" value={returnToBase} />
+                          <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="text-gray-500 text-sm">Отказана.</span>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
-          </div>
 
-          {bookingsErr && (
-            <div className="bg-red-100 text-red-800 p-3 rounded">Грешка при зареждане на резервациите.</div>
-          )}
-
-          {list.length === 0 ? (
-            <div className="text-gray-700">Няма резервации за този филтър.</div>
-          ) : (
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="bookings-table-desktop overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-600 border-b">
@@ -235,13 +472,12 @@ export default async function AdminBookings(props: {
                   {list.map((b) => {
                     const isCancelled = b.status === "cancelled";
                     const isPending = b.status === "pending";
-                    const when = fmtDT(b.start_at, "Europe/Sofia");
+                    const when = fmtDT(b.start_at, tz);
                     const serviceName = b.service?.name || "—";
 
                     return (
                       <tr key={b.id} className="border-b align-top">
                         <td className="py-3 pr-3 whitespace-nowrap">{when}</td>
-
                         <td className="py-3 pr-3">
                           <div className="font-medium">{serviceName}</div>
                           {b.customer_note ? (
@@ -250,14 +486,11 @@ export default async function AdminBookings(props: {
                             </div>
                           ) : null}
                         </td>
-
                         <td className="py-3 pr-3">{b.customer_name}</td>
-
                         <td className="py-3 pr-3">
                           <div>{b.customer_phone}</div>
                           <div className="text-gray-600">{b.customer_email}</div>
                         </td>
-
                         <td className="py-3 pr-3">
                           <span
                             className={[
@@ -272,7 +505,6 @@ export default async function AdminBookings(props: {
                             {b.status}
                           </span>
                         </td>
-
                         <td className="py-3 pr-3">
                           {isCancelled ? (
                             <span className="text-gray-500">—</span>
@@ -280,20 +512,16 @@ export default async function AdminBookings(props: {
                             <div className="flex gap-2 flex-wrap">
                               <form action={confirmBooking}>
                                 <input type="hidden" name="booking_id" value={b.id} />
-                                <button
-                                  type="submit"
-                                  className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90"
-                                >
+                                <input type="hidden" name="return_to" value={returnToBase} />
+                                <button type="submit" className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
                                   Confirm
                                 </button>
                               </form>
 
                               <form action={cancelBooking}>
                                 <input type="hidden" name="booking_id" value={b.id} />
-                                <button
-                                  type="submit"
-                                  className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
-                                >
+                                <input type="hidden" name="return_to" value={returnToBase} />
+                                <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
                                   Cancel
                                 </button>
                               </form>
@@ -301,10 +529,8 @@ export default async function AdminBookings(props: {
                           ) : (
                             <form action={cancelBooking}>
                               <input type="hidden" name="booking_id" value={b.id} />
-                              <button
-                                type="submit"
-                                className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
-                              >
+                              <input type="hidden" name="return_to" value={returnToBase} />
+                              <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
                                 Cancel
                               </button>
                             </form>
@@ -316,14 +542,15 @@ export default async function AdminBookings(props: {
                 </tbody>
               </table>
             </div>
-          )}
+          </>
+        )}
 
-          <div className="text-xs text-gray-500">
-            Cancel е soft: сменя <code>status</code> на <code>cancelled</code>, без да трие реда. Confirm сменя на{" "}
-            <code>confirmed</code>.
-          </div>
+        <div className="text-xs text-gray-500">
+          Cancel е soft: сменя <code>status</code> на <code>cancelled</code>, без да трие реда. Confirm сменя на <code>confirmed</code>.
         </div>
       </div>
-    </main>
-  );
+    </div>
+  </main>
+);
+
 }

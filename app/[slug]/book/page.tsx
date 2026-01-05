@@ -1,3 +1,4 @@
+//app\[slug]\book\page.tsx
 import BookingClient from "./ui";
 
 function todayYMD(timeZone = "Europe/Sofia") {

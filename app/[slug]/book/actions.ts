@@ -79,11 +79,30 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
 }
 
 function weekdayKeyForDate(dateYMD: string, timeZone = "Europe/Sofia"): number {
-  const utcMidnight = makeUtcFromLocal(dateYMD, "00:00", timeZone);
-  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(utcMidnight);
-  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return map[weekday] ?? 0;
+  const [Y, M, D] = dateYMD.split("-").map(Number);
+
+  // UTC noon = стабилен ден, няма как да "прескочи"
+  const utcNoon = new Date(Date.UTC(Y, M - 1, D, 12, 0, 0));
+
+  const w = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  }).format(utcNoon);
+
+  const map: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
+  return map[w] ?? 0;
 }
+
+
 
 /**
  * Types returned to UI
@@ -212,9 +231,11 @@ export async function getAvailability(args: {
   const { data: wh, error: whErr } = await sb
     .from("staff_working_hours")
     .select("weekday, start_time, end_time, is_closed")
+    .eq("client_id", clientId)
     .eq("staff_id", staffId)
     .eq("weekday", weekday)
     .maybeSingle<WorkingHoursRow>();
+
 
   if (whErr || !wh || wh.is_closed) {
     return {

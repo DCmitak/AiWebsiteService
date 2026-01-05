@@ -1,0 +1,249 @@
+/* app/admin/[slug]/bookings/_components/BookingsCalendar.css */
+
+/* ---------- FullCalendar base ---------- */
+.fc {
+  --fc-border-color: #e5e7eb;
+  --fc-page-bg-color: #ffffff;
+  --fc-neutral-bg-color: #f9fafb;
+  --fc-today-bg-color: rgba(0, 0, 0, 0.04);
+  --fc-small-font-size: 0.85em;
+}
+
+.fc .fc-toolbar-title {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Buttons: keep dark always */
+.fc .fc-button {
+  border-radius: 10px !important;
+  border-width: 1px !important;
+  padding: 0.45rem 0.65rem !important;
+  box-shadow: none !important;
+}
+
+.fc .fc-button-primary {
+  background: #111827 !important;
+  border-color: #111827 !important;
+  color: #fff !important;
+}
+
+.fc .fc-button-primary:hover,
+.fc .fc-button-primary:focus,
+.fc .fc-button-primary:active {
+  background: #111827 !important;
+  border-color: #111827 !important;
+  color: #fff !important;
+  opacity: 0.92;
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled).fc-button-active:hover,
+.fc .fc-button-primary:not(:disabled).fc-button-active:focus {
+  background: #111827 !important;
+  border-color: #111827 !important;
+  color: #fff !important;
+  opacity: 1;
+}
+
+.fc .fc-toolbar.fc-header-toolbar {
+  margin-bottom: 0.75rem !important;
+}
+
+/* Event box + overflow control */
+.fc .fc-timegrid-event {
+  border-radius: 12px !important;
+  padding: 6px 8px !important;
+  border-width: 1px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  overflow: hidden !important;
+}
+
+.fc .fc-timegrid-event .fc-event-main {
+  overflow: hidden !important;
+}
+
+.fc .fc-ev-time {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  opacity: 0.95 !important;
+  margin-bottom: 4px !important;
+}
+
+.fc .fc-ev-title {
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  word-break: break-word !important;
+}
+
+/* Status colors */
+.fc .fc-confirmed {
+  background: #d1fae5 !important;
+  border-color: #34d399 !important;
+}
+.fc .fc-confirmed .fc-ev-time,
+.fc .fc-confirmed .fc-ev-title {
+  color: #064e3b !important;
+}
+
+.fc .fc-pending {
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
+}
+.fc .fc-pending .fc-ev-time,
+.fc .fc-pending .fc-ev-title {
+  color: #92400e !important;
+}
+
+.fc .fc-cancelled {
+  background: #fee2e2 !important;
+  border-color: #ef4444 !important;
+}
+.fc .fc-cancelled .fc-ev-time,
+.fc .fc-cancelled .fc-ev-title {
+  color: #7f1d1d !important;
+  text-decoration: line-through;
+}
+
+.fc .fc-timeoff {
+  background: rgba(107, 114, 128, 0.22) !important;
+  border: none !important;
+}
+
+/* ---------- Mobile cards ---------- */
+.bc-mobile {
+  display: grid;
+  gap: 12px;
+}
+
+.bc-mobile-nav {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.bc-nav-btn {
+  width: 56px;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid #111827;
+  background: #111827;
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.bc-today-btn {
+  height: 48px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid #6b7280;
+  background: #6b7280;
+  color: #fff;
+  font-weight: 800;
+}
+
+.bc-range-title {
+  font-weight: 900;
+  color: #111827;
+}
+
+.bc-empty {
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  color: #111827;
+}
+
+.bc-cards {
+  display: grid;
+  gap: 14px;
+}
+
+.bc-day-title {
+  font-weight: 900;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+.bc-day-list {
+  display: grid;
+  gap: 10px;
+}
+
+.bc-card {
+  text-align: left;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.bc-card-time {
+  font-weight: 900;
+  color: #111827;
+}
+
+.bc-card-title {
+  font-weight: 900;
+  color: #111827;
+  line-height: 1.15;
+}
+
+.bc-card-sub {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.bc-card-status {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #111827;
+  opacity: 0.75;
+}
+
+/* status background */
+.bc-card.is-confirmed {
+  background: #ecfdf5;
+  border-color: #34d399;
+}
+.bc-card.is-pending {
+  background: #fffbeb;
+  border-color: #f59e0b;
+}
+.bc-card.is-cancelled {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+
+
+/* LOADING CALENDAR */
+.bc-cal-wrap { position: relative; }
+
+.bc-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: none;
+  padding-top: 12px;
+}
+
+.bc-loading-pill {
+  background: rgba(17, 24, 39, 0.92);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  padding: 8px 10px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+}

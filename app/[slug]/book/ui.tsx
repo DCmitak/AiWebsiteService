@@ -1,8 +1,12 @@
+//app\[slug]\book\ui.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type { AvailabilityResult, AvailabilitySlot, CreateBookingResult } from "./actions";
 import { getAvailability, createBooking } from "./actions";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/dist/style.css";
+
 
 function formatDateBg(dateYMD?: string) {
   if (!dateYMD || typeof dateYMD !== "string" || !dateYMD.includes("-")) return "—";
@@ -18,6 +22,13 @@ function formatDateBg(dateYMD?: string) {
     month: "2-digit",
     year: "numeric",
   }).format(dt);
+}
+
+function toYMD(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 
@@ -190,48 +201,58 @@ export default function BookingClient({
       )}
 
     {/* Step 1: Date */}
-        <div className="bg-white p-6 rounded shadow space-y-4">
-        <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">1) Избери дата</h2>
-            <div className="text-sm text-gray-600 whitespace-nowrap">
-            {formatDateBg(date)}
-            </div>
-        </div>
+    <div className="bg-white p-6 rounded shadow space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">1) Избери дата</h2>
+        <div className="text-sm text-gray-600 whitespace-nowrap">{formatDateBg(date)}</div>
+      </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-            <input
-            type="date"
-            value={date || ""}
-            onChange={(e) => {
-                const next = e.target.value || "";
-                setDate(next);
-                if (next) startTransition(() => loadAvailability(next));
+      <div className="grid md:grid-cols-[320px_1fr] gap-6 items-start">
+        {/* Calendar */}
+        <div className="rounded border bg-white p-3">
+          <DayPicker
+            mode="single"
+            weekStartsOn={1} // Понеделник
+            selected={date ? new Date(`${date}T12:00:00`) : undefined}
+            onSelect={(d) => {
+              if (!d) return;
+              const next = toYMD(d);
+              setDate(next);
+              startTransition(() => loadAvailability(next));
             }}
-            className="border px-3 py-2 rounded"
-            />
-
-            {isPending && <div className="text-sm text-gray-600">Зареждане…</div>}
+          />
         </div>
 
-        <div className="text-sm text-gray-600">
+        {/* Info */}
+        <div className="space-y-2">
+          {isPending && <div className="text-sm text-gray-600">Зареждане…</div>}
+
+          <div className="text-sm text-gray-600">
             Услуга: <span className="font-medium">{data?.service.name ?? "—"}</span>{" "}
             {data?.service.price != null && (
-            <>
+              <>
                 • Цена:{" "}
                 <span className="font-medium">
-                {data.service.price} {data.service.currency}
+                  {data.service.price} {data.service.currency}
                 </span>
-            </>
+              </>
             )}
             {data?.service.durationMinutes && (
-            <>
+              <>
                 {" "}
                 • Продължителност:{" "}
                 <span className="font-medium">{data.service.durationMinutes} мин.</span>
-            </>
+              </>
             )}
+          </div>
+
+          <div className="text-xs text-gray-500">
+            Седмицата започва от <b>понеделник</b>.
+          </div>
         </div>
-        </div>
+      </div>
+    </div>
+
 
 
       {/* Step 2: Slots */}
