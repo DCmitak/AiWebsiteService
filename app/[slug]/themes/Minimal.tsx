@@ -4,7 +4,6 @@ import ReviewsCarousel from "./ReviewsCarousel";
 import ServicesTabs from "../ServicesTabs";
 import ServicesTabsV2 from "../ServicesTabsV2";
 
-
 export default function MinimalTheme({ client, settings, services, gallery, reviews }: PublicPayload) {
   const primary = settings?.primary_color || "#B2773D";
   const pricingLayout = (settings?.pricing_layout || "v1").toLowerCase();
@@ -13,15 +12,16 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
   const surface = "#F7EFEE";
   const ink = "#1F2430";
 
-  const booking = settings?.booking_url || "#book";
-  const phone = (settings?.phone || "").trim();
+  // Booking is now internal (your system)
+  const booking = `/${client.slug}/book`;
 
+  const phone = (settings?.phone || "").trim();
   const address = settings?.address || "";
   const hours = settings?.working_hours || "";
-  const about = settings?.about_text || "";
+  const aboutText = settings?.about_text || "";
 
   const mapUrl = settings?.google_maps_url || "";
-  const logoUrl = settings?.logo_url || "";
+  const logoUrl = (settings?.logo_url || "").trim();
 
   const facebook = settings?.facebook_url || "";
   const instagram = settings?.instagram_url || "";
@@ -38,55 +38,94 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
   const svc = (Array.isArray(services) ? services : []) as Service[];
   const gal = (Array.isArray(gallery) ? gallery : []) as GalleryImage[];
 
-  // --- GALLERY SECTIONS (semantic, no magic indices) ---
+  const PLACEHOLDER = "/img/placeholder.svg";
+
+  // ---- gallery sections (ONLY admin-driven) ----
   const heroGallery = gal.find((x) => (x.section || "").toString().toLowerCase() === "hero");
+  const aboutGallery = gal.find((x) => (x.section || "").toString().toLowerCase() === "about");
+  const pricingGallery = gal.find((x) => (x.section || "").toString().toLowerCase() === "pricing");
+
   const work = gal.filter((x) => (x.section || "work").toString().toLowerCase() === "work");
   const venue = gal.filter((x) => (x.section || "").toString().toLowerCase() === "venue");
+  const brands = gal.filter((x) => (x.section || "").toString().toLowerCase() === "brands");
 
-  const fallbackHero =
-    "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=1800&q=80";
+  const heroImg = (heroGallery?.image_url || "").trim() || PLACEHOLDER;
+  const aboutImg = (aboutGallery?.image_url || "").trim() || PLACEHOLDER;
+  const pricingImg = (pricingGallery?.image_url || "").trim() || PLACEHOLDER;
 
-  const heroImg = settings?.hero_image_url || heroGallery?.image_url || work[0]?.image_url || fallbackHero;
+  // ---- section copy (Minimal settings; with defaults) ----
+  const copy = {
+    categoryLabel: (settings?.category_label || "").trim() || "УСЛУГИ",
+    heroTitle: (settings?.hero_title || "").trim(),
+    heroSubtitle: (settings?.hero_subtitle || "").trim(),
 
-  const aboutImg =
-    venue[0]?.image_url ||
-    work[0]?.image_url ||
-    "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=1800&q=80";
+    servicesEyebrow: (settings?.services_eyebrow || "").trim() || "НАШИТЕ УСЛУГИ",
+    servicesTitle: (settings?.services_title || "").trim() || "Препоръчани процедури",
+    servicesSubtitle:
+      (settings?.services_subtitle || "").trim() || "Подбрани услуги, за да изглеждаш и да се чувстваш прекрасно.",
 
-  const pricingImg =
-    work[1]?.image_url ||
-    work[0]?.image_url ||
-    venue[0]?.image_url ||
-    "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=1800&q=80";
+    aboutEyebrow: (settings?.about_eyebrow || "").trim() || "За нас",
+    aboutTitle: (settings?.about_title || "").trim() || `Добре дошли в ${client.business_name}!`,
+    aboutCta: (settings?.about_cta_label || "").trim() || "Виж цени",
 
-  // IMPORTANT: ONLY DB reviews (payload)
+    brandsEyebrow: (settings?.brands_eyebrow || "").trim() || "Марки",
+    brandsTitle: (settings?.brands_title || "").trim() || "Марките, с които работим",
+    brandsSubtitle:
+      (settings?.brands_subtitle || "").trim() || "Подбрани професионални продукти и партньори.",
+
+    pricingEyebrow: (settings?.pricing_eyebrow || "").trim() || "Цени",
+    pricingTitle: (settings?.pricing_title || "").trim() || "Ценоразпис",
+    pricingSubtitle:
+      (settings?.pricing_subtitle || "").trim() || "Избери услуга и запази час лесно.",
+    pricingBadge:
+      (settings?.pricing_badge || "").trim() || "Без плащане онлайн • Плащане в обекта",
+
+    galleryEyebrow: (settings?.gallery_eyebrow || "").trim() || "Галерия",
+    galleryTitle: (settings?.gallery_title || "").trim() || "Нашата работа и обект",
+    gallerySubtitle:
+      (settings?.gallery_subtitle || "").trim() ||
+      "Подбрани снимки, които най-добре показват стила ни.",
+    galleryWorkTitle: (settings?.gallery_work_title || "").trim() || "Снимки от работата ни",
+    galleryVenueTitle: (settings?.gallery_venue_title || "").trim() || "Галерия на обекта",
+
+    reviewsEyebrow: (settings?.reviews_eyebrow || "").trim() || "Отзиви",
+    reviewsTitle: (settings?.reviews_title || "").trim() || "Клиентите за нас",
+    reviewsSubtitle: (settings?.reviews_subtitle || "").trim() || "Благодарим за всяко мнение!",
+
+    contactEyebrow: (settings?.contact_eyebrow || "").trim() || "Контакти",
+    contactTitle: (settings?.contact_title || "").trim() || "Свържи се с нас",
+    contactSubtitle: (settings?.contact_subtitle || "").trim() || "Запази час и се погрижи за себе си.",
+  };
+
+  // ---- reviews (payload only) ----
   const reviewsFinal: Review[] = Array.isArray(reviews) ? (reviews as Review[]) : [];
 
-  // Featured services: 3 карти (услуги + снимки от WORK gallery)
+  // ---- featured services ----
   const featuredManual = svc
     .filter((s) => !!s.is_featured)
     .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999))
     .slice(0, 3);
 
   const featuredAuto = pickFeaturedServices(svc, 3);
-
   const featuredFinal = featuredManual.length ? featuredManual : featuredAuto;
 
   const featuredWithImages = featuredFinal.map((s, i) => ({
     ...s,
     image_url:
       (s.featured_image_url || "").trim() ||
-      work[i]?.image_url ||
-      work[(i + 3) % Math.max(1, work.length)]?.image_url ||
-      heroImg,
+      (work[i]?.image_url || "").trim() ||
+      (work[(i + 3) % Math.max(1, work.length)]?.image_url || "").trim() ||
+      PLACEHOLDER,
   }));
 
+  // ---- hero feature cards (from settings; with defaults) ----
+  const heroFeatures = normalizeHeroFeatures(settings?.hero_features);
 
-  // Hero copy from admin (optional)
-  const heroTitle = (settings?.hero_title || "").trim();
-  const heroSubtitle = (settings?.hero_subtitle || "").trim();
-  const categoryLabel = (settings?.category_label || "").trim() || "УСЛУГИ";
-  const heroFeatures = Array.isArray(settings?.hero_features) ? settings!.hero_features! : [];
+  // ---- branding header rules ----
+  const brandMode = (settings?.brand_mode || "text").toLowerCase() as "logo" | "text";
+  const brandText = (settings?.brand_text || "").trim() || client.business_name;
+  const brandSubtext = (settings?.brand_subtext || "").trim(); // optional (you asked no "Sofia" by default)
+  const brandLetter = (brandText || client.business_name || "B").trim().slice(0, 1).toUpperCase();
 
   return (
     <main style={{ background: surface, color: ink }} className="min-h-screen">
@@ -95,21 +134,32 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
         <div className={cx(container, "flex items-center justify-between px-6 py-4")}>
           {/* Brand */}
           <a href="#" className="flex items-center gap-3 min-w-0">
-            {logoUrl ? (
+            {brandMode === "logo" && logoUrl ? (
+              // Logo only
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={logoUrl}
                 alt={`${client.business_name} logo`}
-                className="h-10 w-10 rounded-full object-cover border border-black/10 bg-white"
+                className="h-11 w-auto max-w-[180px] object-contain"
               />
             ) : (
-              <div className="h-10 w-10 rounded-full bg-white/60 ring-1 ring-black/10" aria-hidden />
-            )}
+              // Text brand mode (circle + text)
+              <>
+                <div
+                  className="h-11 w-11 rounded-full grid place-items-center border border-black/10 bg-white/60 font-semibold text-sm"
+                  aria-hidden
+                >
+                  {brandLetter}
+                </div>
 
-            <div className="min-w-0 leading-tight">
-              <div className="text-[15px] font-semibold tracking-tight truncate">{client.business_name}</div>
-              <div className="text-xs text-black/55 truncate">{client.city}</div>
-            </div>
+                <div className="min-w-0 leading-tight">
+                  <div className="text-[15px] font-semibold tracking-tight truncate">{brandText}</div>
+                  {brandSubtext ? (
+                    <div className="text-xs text-black/55 truncate">{brandSubtext}</div>
+                  ) : null}
+                </div>
+              </>
+            )}
           </a>
 
           {/* Nav */}
@@ -160,28 +210,26 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
           <div className="grid grid-cols-1 items-center gap-12 py-14 md:grid-cols-12 md:py-20">
             {/* LEFT */}
             <div className="md:col-span-8 lg:col-span-8">
-              <div className="text-[11px] font-semibold tracking-[0.30em] text-black/55">{categoryLabel}</div>
+              <div className="text-[11px] font-semibold tracking-[0.30em] text-black/55">{copy.categoryLabel}</div>
 
               <h1
                 className="mt-5 font-serif text-[46px] leading-[0.93] tracking-[-0.02em] text-[#111827] md:text-[78px] lg:text-[86px]"
                 style={{ fontFamily: "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif" }}
               >
-                {heroTitle ? (
-                  heroTitle
+                {copy.heroTitle ? (
+                  copy.heroTitle
                 ) : (
                   <>
                     Добре дошли в
                     <br />
                     {client.business_name}
-                    <br />
-                    ({client.city})
                   </>
                 )}
               </h1>
 
-              {heroSubtitle ? (
+              {copy.heroSubtitle ? (
                 <p className="mt-6 max-w-3xl text-[16px] leading-7 text-black/65 md:text-[19px] md:leading-8">
-                  {heroSubtitle}
+                  {copy.heroSubtitle}
                 </p>
               ) : null}
 
@@ -206,17 +254,17 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
 
               {/* Feature mini cards */}
               <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-3xl">
-                {(heroFeatures.length
-                  ? heroFeatures.slice(0, 3).map((x) => ({ t: x.title, d: x.text }))
-                  : [
-                      { t: "Професионално отношение", d: "Фокус върху качество и детайл." },
-                      { t: "Чистота и комфорт", d: "Уютна атмосфера и грижа за клиента." },
-                      { t: "Лесно записване", d: "Онлайн букинг и бърза връзка." },
-                    ]
-                ).map((x) => (
-                  <div key={x.t} className="rounded-2xl bg-white/45 p-4 shadow-sm ring-1 ring-black/10">
-                    <div className="text-sm font-semibold text-[#111827]">{x.t}</div>
-                    <div className="mt-2 text-xs leading-5 text-black/60">{x.d}</div>
+                {heroFeatures.map((x) => (
+                  <div key={x.title} className="rounded-2xl bg-white/55 p-4 shadow-sm ring-1 ring-black/10">
+                    <div className="flex items-center gap-2">
+                      <div className="h-9 w-9 rounded-xl bg-white/70 ring-1 ring-black/10 grid place-items-center">
+                        <span className="text-base" aria-hidden>
+                          {x.icon}
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold text-[#111827]">{x.title}</div>
+                    </div>
+                    <div className="mt-3 text-xs leading-5 text-black/60">{x.text}</div>
                   </div>
                 ))}
               </div>
@@ -233,8 +281,12 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={heroImg}
-                      alt={settings?.hero_image_alt || "Hero"}
-                      className="h-[560px] w-full object-cover md:h-[680px]"
+                      alt="Hero"
+                      className={
+                        heroImg === PLACEHOLDER
+                          ? "h-[560px] w-full object-contain p-12 bg-white/40 md:h-[680px]"
+                          : "h-[560px] w-full object-cover md:h-[680px]"
+                      }
                     />
                   </div>
                 </div>
@@ -247,20 +299,15 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
             </div>
           </div>
         </div>
-
       </section>
 
       {/* FEATURED SERVICES */}
       <section id="services" className="bg-[#F6EEE9]">
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
           <div className="text-center">
-            <div className="text-[12px] font-semibold tracking-[0.26em] text-black/45">НАШИТЕ УСЛУГИ</div>
-            <h2 className="mt-4 font-serif text-3xl tracking-tight text-[#111827] md:text-4xl">
-              Препоръчани процедури
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-[16px] leading-7 text-black/60">
-              Подбрани услуги, за да изглеждаш и да се чувстваш прекрасно.
-            </p>
+            <div className="text-[12px] font-semibold tracking-[0.26em] text-black/45">{copy.servicesEyebrow}</div>
+            <h2 className="mt-4 font-serif text-3xl tracking-tight text-[#111827] md:text-4xl">{copy.servicesTitle}</h2>
+            <p className="mx-auto mt-4 max-w-2xl text-[16px] leading-7 text-black/60">{copy.servicesSubtitle}</p>
           </div>
 
           <div className="mt-10 grid gap-6 md:grid-cols-3">
@@ -268,10 +315,14 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
               <a
                 key={s.id}
                 href="#pricing"
-                className="group block overflow-hidden bg-white border border-black/10 shadow-[0_20px_60px_rgba(0,0,0,0.08)] hover:shadow-[0_28px_90px_rgba(0,0,0,0.12)] transition"
+                className="group block overflow-hidden bg-white border border-black/10 shadow-[0_20px_60px_rgba(0,0,0,0.08)] hover:shadow-[0_28px_90px_rgba(0,0,0,0.12)] transition rounded-2xl"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={s.image_url} alt="" className="w-full h-72 object-cover" />
+                <img
+                  src={s.image_url || PLACEHOLDER}
+                  alt=""
+                  className={(s.image_url || PLACEHOLDER) === PLACEHOLDER ? "w-full h-72 object-contain p-10 bg-white/40" : "w-full h-72 object-cover"}
+                />
                 <div className="p-6">
                   <div className="text-xl font-semibold font-serif">{s.name}</div>
                   <div className="mt-2 opacity-70 line-clamp-2">{s.description || "—"}</div>
@@ -295,25 +346,27 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
       {/* ABOUT */}
       <section id="about" style={{ background: bg }} className="border-y border-black/10">
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
-          <div className="grid lg:grid-cols-12 gap-10 items-stretch">
+          <div className="grid lg:grid-cols-12 gap-10 items-start">
             <div className="lg:col-span-7">
-              <div className="bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] h-full">
+              <div className="bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] overflow-hidden rounded-2xl h-[420px] md:h-[520px]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={aboutImg} alt="" className="w-full h-[420px] md:h-[520px] object-cover" />
+                <img
+                  src={aboutImg}
+                  alt=""
+                  className={aboutImg === PLACEHOLDER ? "block w-full h-full object-contain p-12 bg-white/40" : "block w-full h-full object-cover"}
+                />
               </div>
             </div>
 
             <div className="lg:col-span-5">
               <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
-                За нас
+                {copy.aboutEyebrow}
               </div>
 
-              <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
-                Добре дошли в {client.business_name}!
-              </h2>
+              <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">{copy.aboutTitle}</h2>
 
               <div className="mt-6 space-y-4 opacity-80 leading-relaxed">
-                <p>{about || "Добави about_text в Settings."}</p>
+                <p>{aboutText || "Добави About текст в Settings."}</p>
               </div>
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -333,12 +386,8 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
                   </a>
                 ) : null}
 
-                <a
-                  href="#pricing"
-                  className="px-6 py-3 rounded-md text-white font-semibold shadow-sm hover:shadow-md transition"
-                  style={{ background: primary }}
-                >
-                  Виж цени
+                <a href="#pricing" className="px-6 py-3 rounded-md text-white font-semibold shadow-sm hover:shadow-md transition" style={{ background: primary }}>
+                  {copy.aboutCta}
                 </a>
               </div>
             </div>
@@ -346,98 +395,125 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
         </div>
       </section>
 
-{/* PRICING */}
-{pricingLayout === "v2" ? (
-  // =========================
-  // V2: APP-STYLE (NO IMAGE)
-  // =========================
-  <section id="pricing" className="bg-[#F6EEE9] border-t border-black/10">
-    <div className="mx-auto max-w-4xl px-6 py-14 md:py-18">
-      <div className="flex items-end justify-between gap-6 flex-wrap">
-        <div>
-          <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
-            Цени
-          </div>
-          <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Ценоразпис</h2>
-          <p className="mt-3 opacity-70 max-w-xl">
-            Избери категория, после натисни „Запази час“ на конкретната услуга.
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-black/10 bg-white/60 px-4 py-3 text-sm text-black/60">
-          Без плащане онлайн • Плащане в обекта
-        </div>
-      </div>
-
-      <div className="mt-6">
-        <ServicesTabsV2 services={svc} primary={primary} slug={client.slug} />
-      </div>
-
-      <div className="mt-5 text-xs text-black/45">
-        Ако не виждаш свободни часове, провери работното време или избери друга дата.
-      </div>
-    </div>
-  </section>
-) : (
-  // =========================
-  // V1: CLASSIC (WITH IMAGE)
-  // =========================
-  <section id="pricing" className="bg-[#F6EEE9]">
-    <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
-      <div className="grid lg:grid-cols-12 gap-10">
-        <div className="lg:col-span-6">
-          <div className="bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={pricingImg} alt="" className="w-full h-[520px] object-cover" />
-          </div>
-        </div>
-
-        <div className="lg:col-span-6">
-          <div style={{ background: bg }} className="border border-black/10 p-8 md:p-10 h-full">
-            <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
-              Цени
+      {/* BRANDS (logos from gallery section "brands") */}
+      {brands.length ? (
+        <section style={{ background: surface }} className="border-t border-black/10">
+          <div className="mx-auto max-w-7xl px-6 py-14 md:py-16">
+            <div>
+              <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
+                {copy.brandsEyebrow}
+              </div>
+              <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide">{copy.brandsTitle}</h2>
+              <p className="mt-3 opacity-70 max-w-2xl">{copy.brandsSubtitle}</p>
             </div>
 
-            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Ценоразпис</h2>
-
-            <p className="mt-4 opacity-75 max-w-xl">Избери услуга и запази час лесно.</p>
-
-            <div className="mt-8">
-              <ServicesTabs services={svc} primary={primary} slug={client.slug} />
-            </div>
-
-            <div className="mt-10">
-              <a
-                href={booking}
-                className="inline-flex px-6 py-3 rounded-md text-white font-semibold shadow-sm hover:shadow-md transition"
-                style={{ background: primary }}
-              >
-                Запази час
-              </a>
+            <div className="mt-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {brands.slice(0, 24).map((b) => (
+                <div key={b.id} className="h-24 rounded-xl border border-black/10 bg-white shadow-sm grid place-items-center p-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={b.image_url} alt="" className="max-h-full max-w-full object-contain opacity-90" />
+                </div>
+              ))}
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-  </section>
-)}
+        </section>
+      ) : null}
 
+      {/* PRICING */}
+      {pricingLayout === "v2" ? (
+        // V2: APP-STYLE (NO IMAGE)
+        <section id="pricing" className="bg-[#F6EEE9] border-t border-black/10">
+          <div className="mx-auto max-w-4xl px-6 py-14 md:py-18">
+            <div className="flex items-end justify-between gap-6 flex-wrap">
+              <div>
+                <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
+                  {copy.pricingEyebrow}
+                </div>
+                <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide">{copy.pricingTitle}</h2>
+                <p className="mt-3 opacity-70 max-w-xl">{copy.pricingSubtitle}</p>
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-white/60 px-4 py-3 text-sm text-black/60">
+                {copy.pricingBadge}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <ServicesTabsV2 services={svc} primary={primary} slug={client.slug} />
+            </div>
+
+            <div className="mt-5 text-xs text-black/45">Ако не виждаш свободни часове, избери друга дата.</div>
+          </div>
+        </section>
+      ) : (
+        // V1: CLASSIC (WITH IMAGE) — FIXED HEIGHT BEHAVIOR
+        <section id="pricing" className="bg-[#F6EEE9]">
+          <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
+            <div className="grid lg:grid-cols-12 gap-10 items-stretch">
+              {/* LEFT IMAGE: stretches with the right content */}
+              <div className="lg:col-span-6 self-stretch">
+                <div className="h-full">
+                  <div className="relative h-full min-h-[520px] rounded-2xl bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pricingImg}
+                      alt=""
+                      className={
+                        pricingImg === PLACEHOLDER
+                          ? "absolute inset-0 w-full h-full object-contain p-12 bg-white/40"
+                          : "absolute inset-0 w-full h-full object-cover"
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT */}
+              <div className="lg:col-span-6">
+                <div style={{ background: bg }} className="border border-black/10 p-8 md:p-10 h-full rounded-2xl">
+                  <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
+                    {copy.pricingEyebrow}
+                  </div>
+
+                  <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">{copy.pricingTitle}</h2>
+
+                  <p className="mt-4 opacity-75 max-w-xl">{copy.pricingSubtitle}</p>
+
+                  <div className="mt-8">
+                    <ServicesTabs services={svc} primary={primary} slug={client.slug} />
+                  </div>
+
+                  <div className="mt-10">
+                    <a
+                      href={booking}
+                      className="inline-flex px-6 py-3 rounded-md text-white font-semibold shadow-sm hover:shadow-md transition"
+                      style={{ background: primary }}
+                    >
+                      Запази час
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* GALLERY */}
       <section id="gallery" style={{ background: surface }} className="border-t border-black/10">
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
           <div className="text-center">
             <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
-              Галерия
+              {copy.galleryEyebrow}
             </div>
-            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Нашата работа и обект</h2>
-            <p className="mt-3 opacity-70">Подбрани снимки, които най-добре показват стила ни.</p>
+            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">{copy.galleryTitle}</h2>
+            <p className="mt-3 opacity-70">{copy.gallerySubtitle}</p>
           </div>
 
           {/* Work */}
           <div className="mt-12">
             <div className="flex items-end justify-between gap-4">
-              <h3 className="font-serif text-2xl tracking-tight">Снимки от работата ни</h3>
+              <h3 className="font-serif text-2xl tracking-tight">{copy.galleryWorkTitle}</h3>
               <div className="text-sm opacity-60">{work.length ? `${work.length} снимки` : "—"}</div>
             </div>
 
@@ -464,7 +540,7 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
           {/* Venue */}
           <div className="mt-14">
             <div className="flex items-end justify-between gap-4">
-              <h3 className="font-serif text-2xl tracking-tight">Галерия на обекта</h3>
+              <h3 className="font-serif text-2xl tracking-tight">{copy.galleryVenueTitle}</h3>
               <div className="text-sm opacity-60">{venue.length ? `${venue.length} снимки` : "—"}</div>
             </div>
 
@@ -495,11 +571,11 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
           <div className="text-center">
             <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
-              Отзиви
+              {copy.reviewsEyebrow}
             </div>
 
-            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Клиентите за нас</h2>
-            <p className="mt-3 opacity-70">Благодарим за всяко мнение!</p>
+            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">{copy.reviewsTitle}</h2>
+            <p className="mt-3 opacity-70">{copy.reviewsSubtitle}</p>
           </div>
 
           <div className="mt-10">
@@ -513,16 +589,16 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
         <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
           <div className="text-center">
             <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
-              Контакти
+              {copy.contactEyebrow}
             </div>
 
-            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">Свържи се с нас</h2>
+            <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">{copy.contactTitle}</h2>
 
-            <p className="mt-3 opacity-70">Запази час и се погрижи за себе си.</p>
+            <p className="mt-3 opacity-70">{copy.contactSubtitle}</p>
           </div>
 
-          <div className="mt-10 bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] p-4">
-            <div className="bg-[#f3f3f3] border border-black/10">
+          <div className="mt-10 bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] p-4 rounded-2xl">
+            <div className="bg-[#f3f3f3] border border-black/10 rounded-xl">
               <div className="h-64 md:h-80 grid place-items-center text-sm opacity-70">
                 {mapLink ? (
                   <a href={mapLink} target="_blank" rel="noreferrer" className="underline">
@@ -564,11 +640,7 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
       {/* Mobile CTA */}
       <div className="md:hidden fixed bottom-3 left-0 right-0 px-4 z-40">
         <div className="max-w-2xl mx-auto bg-white/90 backdrop-blur border border-black/10 shadow-lg p-3 flex gap-3 rounded-2xl">
-          <a
-            href={booking}
-            className="flex-1 text-center px-4 py-3 rounded-xl text-white font-semibold"
-            style={{ background: primary }}
-          >
+          <a href={booking} className="flex-1 text-center px-4 py-3 rounded-xl text-white font-semibold" style={{ background: primary }}>
             Запази
           </a>
           {phone ? (
@@ -592,7 +664,7 @@ function cx(...cls: Array<string | false | null | undefined>) {
 
 function ContactCard({ title, value, icon }: { title: string; value: string; icon: string }) {
   return (
-    <div className="bg-white border border-black/10 shadow-[0_18px_50px_rgba(0,0,0,0.07)] p-6 text-center">
+    <div className="bg-white border border-black/10 shadow-[0_18px_50px_rgba(0,0,0,0.07)] p-6 text-center rounded-2xl">
       <div className="text-3xl">{icon}</div>
       <div className="mt-3 font-semibold">{title}</div>
       <div className="mt-2 opacity-70">{value}</div>
@@ -631,6 +703,27 @@ function pickFeaturedServices(services: Service[], count: number) {
   }
 
   return picked.slice(0, count);
+}
+
+function normalizeHeroFeatures(raw: any) {
+  const fallback = [
+    { icon: "✨", title: "Професионално отношение", text: "Фокус върху качество и детайл." },
+    { icon: "🧼", title: "Чистота и комфорт", text: "Уютна атмосфера и грижа за клиента." },
+    { icon: "📅", title: "Лесно записване", text: "Онлайн букинг и бърза връзка." },
+  ];
+
+  if (!Array.isArray(raw)) return fallback;
+
+  const cleaned = raw
+    .slice(0, 3)
+    .map((x) => ({
+      icon: (x?.icon || "").toString().trim() || "✨",
+      title: (x?.title || "").toString().trim(),
+      text: (x?.text || "").toString().trim(),
+    }))
+    .filter((x) => x.title.length > 0 && x.text.length > 0);
+
+  return cleaned.length ? cleaned : fallback;
 }
 
 // IMPORTANT: icons come from /public/icons/*.svg

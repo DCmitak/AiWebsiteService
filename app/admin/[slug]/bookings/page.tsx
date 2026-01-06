@@ -92,6 +92,7 @@ function buildBaseReturnTo({
     if (staff) sp.set("staff", staff);
   } else {
     sp.set("status", (status || "pending").toLowerCase());
+    if (staff) sp.set("staff", staff); // ✅ добави това
   }
 
   return `/admin/${slug}/bookings?${sp.toString()}`;
@@ -149,7 +150,7 @@ export default async function AdminBookings(props: {
 
   const normalizedCalendarDate = activeMode === "week" ? normWeekMonday(safeCalendarDate, tz) : safeCalendarDate;
 
-  const tableHref = `/admin/${slug}/bookings?key=${key}&view=table&status=${encodeURIComponent(filter || "pending")}`;
+  const tableHref = `/admin/${slug}/bookings?key=${key}&view=table&status=${encodeURIComponent(filter || "pending")}&staff=${encodeURIComponent(activeStaff)}`;
   const calendarHref = `/admin/${slug}/bookings?key=${key}&view=calendar&mode=${activeMode}&date=${normalizedCalendarDate}&staff=${encodeURIComponent(
     activeStaff
   )}`;
@@ -338,7 +339,7 @@ export default async function AdminBookings(props: {
     );
   }
 
-  // ---------------- TABLE VIEW ----------------
+ // ---------------- TABLE VIEW ----------------
 const nowIso = DateTime.now().setZone(tz).toUTC().toISO()!;
 
 let q = sb
@@ -347,6 +348,11 @@ let q = sb
     "id, client_id, staff_id, service_id, start_at, end_at, status, customer_name, customer_phone, customer_email, customer_note, created_at, service:services(name), staff:staff(name)"
   )
   .eq("client_id", clientId);
+
+// STAFF filter for table view
+if (activeStaff !== "all") {
+  q = q.eq("staff_id", activeStaff);
+}
 
 if (filter === "pending") {
   q = q.eq("status", "pending").order("start_at", { ascending: true });
@@ -380,9 +386,15 @@ return (
           <BookingsPrimaryNav tableHref={tableHref} calendarHref={calendarHref} activeView="table" />
         </div>
 
-        <BookingsTableControls slug={slug} keyParam={key} activeStatus={filter} />
+        <BookingsTableControls
+          slug={slug}
+          keyParam={key}
+          activeStatus={filter}
+          staff={activeStaff}
+          staffOptions={staffOptions}
+        />
 
-        {bookingsErr && <div className="bg-red-100 text-red-800 p-3 rounded">Грешка при зареждане.</div>}
+        {bookingsErr ? <div className="bg-red-100 text-red-800 p-3 rounded">Грешка при зареждане.</div> : null}
 
         {list.length === 0 ? (
           <div className="text-gray-700">
@@ -409,6 +421,11 @@ return (
                     </div>
 
                     <div className="bookings-card-title">{serviceName}</div>
+
+                    {activeStaff === "all" ? (
+                      <div className="bookings-card-sub">Специалист: {b.staff?.name || "—"}</div>
+                    ) : null}
+
                     <div className="bookings-card-sub">{b.customer_name}</div>
                     <div className="bookings-card-sub">{b.customer_phone}</div>
                     <div className="bookings-card-sub">{b.customer_email}</div>
@@ -425,7 +442,10 @@ return (
                           <form action={confirmBooking}>
                             <input type="hidden" name="booking_id" value={b.id} />
                             <input type="hidden" name="return_to" value={returnToBase} />
-                            <button type="submit" className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
+                            <button
+                              type="submit"
+                              className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90"
+                            >
                               Confirm
                             </button>
                           </form>
@@ -433,7 +453,10 @@ return (
                           <form action={cancelBooking}>
                             <input type="hidden" name="booking_id" value={b.id} />
                             <input type="hidden" name="return_to" value={returnToBase} />
-                            <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                            <button
+                              type="submit"
+                              className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
+                            >
                               Cancel
                             </button>
                           </form>
@@ -442,7 +465,10 @@ return (
                         <form action={cancelBooking}>
                           <input type="hidden" name="booking_id" value={b.id} />
                           <input type="hidden" name="return_to" value={returnToBase} />
-                          <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                          <button
+                            type="submit"
+                            className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
+                          >
                             Cancel
                           </button>
                         </form>
@@ -462,6 +488,9 @@ return (
                   <tr className="text-left text-gray-600 border-b">
                     <th className="py-2 pr-3">Кога</th>
                     <th className="py-2 pr-3">Услуга</th>
+
+                    {activeStaff === "all" ? <th className="py-2 pr-3">Специалист</th> : null}
+
                     <th className="py-2 pr-3">Клиент</th>
                     <th className="py-2 pr-3">Контакти</th>
                     <th className="py-2 pr-3">Статус</th>
@@ -478,6 +507,7 @@ return (
                     return (
                       <tr key={b.id} className="border-b align-top">
                         <td className="py-3 pr-3 whitespace-nowrap">{when}</td>
+
                         <td className="py-3 pr-3">
                           <div className="font-medium">{serviceName}</div>
                           {b.customer_note ? (
@@ -486,11 +516,20 @@ return (
                             </div>
                           ) : null}
                         </td>
+
+                        {activeStaff === "all" ? (
+                          <td className="py-3 pr-3">
+                            <div className="font-medium">{b.staff?.name || "—"}</div>
+                          </td>
+                        ) : null}
+
                         <td className="py-3 pr-3">{b.customer_name}</td>
+
                         <td className="py-3 pr-3">
                           <div>{b.customer_phone}</div>
                           <div className="text-gray-600">{b.customer_email}</div>
                         </td>
+
                         <td className="py-3 pr-3">
                           <span
                             className={[
@@ -505,6 +544,7 @@ return (
                             {b.status}
                           </span>
                         </td>
+
                         <td className="py-3 pr-3">
                           {isCancelled ? (
                             <span className="text-gray-500">—</span>
@@ -513,7 +553,10 @@ return (
                               <form action={confirmBooking}>
                                 <input type="hidden" name="booking_id" value={b.id} />
                                 <input type="hidden" name="return_to" value={returnToBase} />
-                                <button type="submit" className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
+                                <button
+                                  type="submit"
+                                  className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90"
+                                >
                                   Confirm
                                 </button>
                               </form>
@@ -521,7 +564,10 @@ return (
                               <form action={cancelBooking}>
                                 <input type="hidden" name="booking_id" value={b.id} />
                                 <input type="hidden" name="return_to" value={returnToBase} />
-                                <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                                <button
+                                  type="submit"
+                                  className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
+                                >
                                   Cancel
                                 </button>
                               </form>
@@ -530,7 +576,10 @@ return (
                             <form action={cancelBooking}>
                               <input type="hidden" name="booking_id" value={b.id} />
                               <input type="hidden" name="return_to" value={returnToBase} />
-                              <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                              <button
+                                type="submit"
+                                className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
+                              >
                                 Cancel
                               </button>
                             </form>
@@ -546,11 +595,13 @@ return (
         )}
 
         <div className="text-xs text-gray-500">
-          Cancel е soft: сменя <code>status</code> на <code>cancelled</code>, без да трие реда. Confirm сменя на <code>confirmed</code>.
+          Cancel е soft: сменя <code>status</code> на <code>cancelled</code>, без да трие реда. Confirm сменя на{" "}
+          <code>confirmed</code>.
         </div>
       </div>
     </div>
   </main>
 );
+
 
 }

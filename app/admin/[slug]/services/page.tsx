@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import AdminTopNav from "@/app/admin/_components/AdminTopNav";
 import { redirect } from "next/navigation";
 
+type ClientRow = { id: string; slug: string; business_name: string };
+
 type ServiceRow = {
   id: string;
   client_id: string;
@@ -13,9 +15,17 @@ type ServiceRow = {
   duration_min: number | null;
   price_from: number | null;
   sort_order: number | null;
-
   is_featured: boolean | null;
   featured_image_url: string | null;
+};
+
+type StaffRow = { id: string; name: string; is_active: boolean; is_default: boolean };
+
+type ServiceStaffRow = {
+  client_id: string;
+  service_id: string;
+  staff_id: string;
+  is_active: boolean;
 };
 
 export default async function AdminServices(props: {
@@ -30,22 +40,52 @@ export default async function AdminServices(props: {
 
   const sb = supabaseServer();
 
+  // 1) Client
   const { data: client, error: clientErr } = await sb
     .from("clients")
     .select("id, slug, business_name")
     .eq("slug", slug)
-    .maybeSingle();
+    .maybeSingle<ClientRow>();
 
   if (clientErr) return <div className="p-8">DB error: {clientErr.message}</div>;
   if (!client) return <div className="p-8">Client not found</div>;
 
+  const clientId = client.id;
+
+  // 2) Staff options
+  const { data: staffRows } = await sb
+    .from("staff")
+    .select("id, name, is_active, is_default")
+    .eq("client_id", clientId)
+    .order("is_default", { ascending: false })
+    .order("name", { ascending: true })
+    .returns<StaffRow[]>();
+
+  const staffOptions = (staffRows || []).filter((s) => s.is_active);
+
+  // 3) Existing assignments
+  const { data: ssRows } = await sb
+    .from("service_staff")
+    .select("client_id, service_id, staff_id, is_active")
+    .eq("client_id", clientId)
+    .eq("is_active", true)
+    .returns<ServiceStaffRow[]>();
+
+  const assignedByService = new Map<string, Set<string>>();
+  for (const r of ssRows || []) {
+    if (!assignedByService.has(r.service_id)) assignedByService.set(r.service_id, new Set());
+    assignedByService.get(r.service_id)!.add(r.staff_id);
+  }
+
+  // 4) Services
   const { data: services, error: servicesErr } = await sb
     .from("services")
     .select(
       "id, client_id, category, name, description, duration_min, price_from, sort_order, is_featured, featured_image_url"
     )
-    .eq("client_id", client.id)
-    .order("sort_order", { ascending: true });
+    .eq("client_id", clientId)
+    .order("sort_order", { ascending: true })
+    .returns<ServiceRow[]>();
 
   if (servicesErr) return <div className="p-8">DB error: {servicesErr.message}</div>;
 
@@ -58,9 +98,13 @@ export default async function AdminServices(props: {
       ? "Service deleted."
       : toast === "upload_failed"
       ? "Upload failed."
+      : toast === "error"
+      ? "Action failed."
       : null;
 
   const BUCKET = "services";
+
+  // ---------------- server actions ----------------
 
   async function addService(formData: FormData) {
     "use server";
@@ -84,9 +128,9 @@ export default async function AdminServices(props: {
 
     const file = formData.get("featured_file") as File | null;
     const featured_image_url_raw = (formData.get("featured_image_url")?.toString() || "").trim();
-
     let featured_image_url: string | null = featured_image_url_raw || null;
 
+    // Upload (optional)
     if (file && file.size > 0) {
       const MAX_BYTES = 10 * 1024 * 1024;
       if (file.size > MAX_BYTES) throw new Error("File too large (max 10MB).");
@@ -115,23 +159,94 @@ export default async function AdminServices(props: {
     }
 
     const sb3 = supabaseServer();
-    const { error } = await sb3.from("services").insert({
-      client_id: clientId,
-      category,
-      name,
-      description,
-      duration_min,
-      price_from,
-      sort_order,
-      is_featured,
-      featured_image_url,
-    });
 
-    if (error) throw new Error(error.message);
+    // 1) Insert service and get id
+    const { data: inserted, error } = await sb3
+      .from("services")
+      .insert({
+        client_id: clientId,
+        category,
+        name,
+        description,
+        duration_min,
+        price_from,
+        sort_order,
+        is_featured,
+        featured_image_url,
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (error || !inserted) throw new Error(error?.message || "Insert failed");
+
+    const serviceId = inserted.id;
+
+    // 2) staff ids from form (checkboxes) + dedupe
+    let staffIds = Array.from(
+      new Set((formData.getAll("staff_ids") || []).map(String).filter(Boolean))
+    );
+
+    // ---- ТУК Е МЯСТОТО, където се "пъха" fallback-а ----
+    // Ако нищо не е избрано -> 1) default staff
+    if (!staffIds.length) {
+      const { data: def } = await sb3
+        .from("staff")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("is_active", true)
+        .eq("is_default", true)
+        .maybeSingle<{ id: string }>();
+
+      if (def?.id) staffIds = [def.id];
+    }
+
+    // 2) ако няма default, вземи първия active
+    if (!staffIds.length) {
+      const { data: one } = await sb3
+        .from("staff")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+
+      if (one?.id) staffIds = [one.id];
+    }
+    // ---- край на fallback-а ----
+
+    // 3) Validate staff belongs to client & active + upsert mapping
+    if (staffIds.length) {
+      const { data: validStaff } = await sb3
+        .from("staff")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("is_active", true)
+        .in("id", staffIds)
+        .returns<{ id: string }[]>();
+
+      const validIds = new Set((validStaff || []).map((x) => x.id));
+
+      const rows = staffIds
+        .filter((sid) => validIds.has(sid))
+        .map((staff_id) => ({
+          client_id: clientId,
+          service_id: serviceId,
+          staff_id,
+          is_active: true,
+        }));
+
+      if (rows.length) {
+        const { error: ssErr } = await sb3
+          .from("service_staff")
+          .upsert(rows, { onConflict: "client_id,service_id,staff_id" });
+
+        if (ssErr) throw new Error(ssErr.message);
+      }
+    }
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/services`);
-
     redirect(`/admin/${slug}/services?key=${encodeURIComponent(key)}&toast=added`);
   }
 
@@ -164,11 +279,12 @@ export default async function AdminServices(props: {
 
     const file = formData.get("featured_file") as File | null;
 
+    const sb3 = supabaseServer();
+
+    // Upload (optional)
     if (file && file.size > 0) {
       const MAX_BYTES = 10 * 1024 * 1024;
       if (file.size > MAX_BYTES) throw new Error("File too large (max 10MB).");
-
-      const sb2 = supabaseServer();
 
       const safeName = sanitizeFileName(file.name || "image");
       const ext = safeName.includes(".") ? safeName.split(".").pop() : "jpg";
@@ -177,7 +293,7 @@ export default async function AdminServices(props: {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      const { error: upErr } = await sb2.storage.from(BUCKET).upload(path, buffer, {
+      const { error: upErr } = await sb3.storage.from(BUCKET).upload(path, buffer, {
         contentType: file.type || "image/jpeg",
         upsert: false,
       });
@@ -187,14 +303,14 @@ export default async function AdminServices(props: {
         return redirect(`/admin/${slug}/services?key=${encodeURIComponent(key)}&toast=upload_failed`);
       }
 
-      const { data: pub } = sb2.storage.from(BUCKET).getPublicUrl(path);
+      const { data: pub } = sb3.storage.from(BUCKET).getPublicUrl(path);
       featured_image_url = pub.publicUrl;
 
       const oldPath = storagePathFromPublicUrl(oldFeaturedUrl, BUCKET);
-      if (oldPath) await sb2.storage.from(BUCKET).remove([oldPath]);
+      if (oldPath) await sb3.storage.from(BUCKET).remove([oldPath]);
     }
 
-    const sb3 = supabaseServer();
+    // 1) Update service
     const { error } = await sb3
       .from("services")
       .update({
@@ -212,9 +328,79 @@ export default async function AdminServices(props: {
 
     if (error) throw new Error(error.message);
 
+    // 2) Staff assignments (dedupe)
+    const staffIds = Array.from(
+      new Set((formData.getAll("staff_ids") || []).map(String).filter(Boolean))
+    );
+
+    // Ако никой не е избран -> fallback към default staff
+    if (!staffIds.length) {
+      const { data: def } = await sb3
+        .from("staff")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("is_active", true)
+        .eq("is_default", true)
+        .maybeSingle<{ id: string }>();
+
+      if (def?.id) staffIds.push(def.id);
+    }
+
+    // Ако няма default -> fallback към първия active staff
+    if (!staffIds.length) {
+      const { data: one } = await sb3
+        .from("staff")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+
+      if (one?.id) staffIds.push(one.id);
+    }
+
+    // Replace mapping (MVP safe)
+    await sb3
+      .from("service_staff")
+      .delete()
+      .eq("client_id", clientId)
+      .eq("service_id", id);
+
+    if (staffIds.length) {
+      // Validate staff belongs to client & active
+      const { data: validStaff } = await sb3
+        .from("staff")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("is_active", true)
+        .in("id", staffIds)
+        .returns<{ id: string }[]>();
+
+      const validIds = new Set((validStaff || []).map((x) => x.id));
+
+      const rows = staffIds
+        .filter((sid) => validIds.has(sid))
+        .map((staff_id) => ({
+          client_id: clientId,
+          service_id: id,
+          staff_id,
+          is_active: true,
+        }));
+
+      if (rows.length) {
+        const { error: ssErr } = await sb3
+          .from("service_staff")
+          .upsert(rows, { onConflict: "client_id,service_id,staff_id" });
+
+        if (ssErr) throw new Error(ssErr.message);
+      }
+    }
+
+
+    // 3) Revalidate + redirect
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/services`);
-
     redirect(`/admin/${slug}/services?key=${encodeURIComponent(key)}&toast=saved`);
   }
 
@@ -241,9 +427,10 @@ export default async function AdminServices(props: {
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/services`);
-
     redirect(`/admin/${slug}/services?key=${encodeURIComponent(key)}&toast=deleted`);
   }
+
+  // ---------------- render ----------------
 
   return (
     <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
@@ -326,11 +513,38 @@ export default async function AdminServices(props: {
               </div>
             </div>
 
+            {/* STAFF ASSIGNMENTS (ADD) */}
+            <div className="md:col-span-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Assigned staff</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Ако не избереш никой, автоматично ще се върже към Default специалист (или първия активен).
+                  </div>
+                </div>
+                <a className="text-xs underline text-gray-700" href={`/admin/${slug}/staff?key=${encodeURIComponent(key)}`}>
+                  Manage staff →
+                </a>
+              </div>
+
+              {staffOptions.length ? (
+                <div className="mt-4 grid sm:grid-cols-2 md:grid-cols-3 gap-2">
+                  {staffOptions.map((st) => (
+                    <label key={st.id} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                      <input type="checkbox" name="staff_ids" value={st.id} defaultChecked={!!st.is_default} className="h-4 w-4" />
+                      <span className="text-sm text-gray-900">
+                        {st.name} {st.is_default ? <span className="text-xs text-gray-500">(default)</span> : null}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 text-xs text-gray-600">No active staff yet. Add staff first, then you can assign them to services.</div>
+              )}
+            </div>
+
             <div className="md:col-span-6">
-              <button
-                type="submit"
-                className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-              >
+              <button type="submit" className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
                 Add
               </button>
             </div>
@@ -342,9 +556,7 @@ export default async function AdminServices(props: {
           <div className="flex items-center justify-between gap-4">
             <div>
               <div className="font-semibold">Current services</div>
-              <div className="text-xs text-gray-500 mt-1">
-                Click a service to expand. Mark max 3 as Featured for the Minimal top cards.
-              </div>
+              <div className="text-xs text-gray-500 mt-1">Click a service to expand. Mark max 3 as Featured for the Minimal top cards.</div>
             </div>
             <div className="text-xs text-gray-500">{services?.length ? `${services.length} services` : "—"}</div>
           </div>
@@ -353,12 +565,8 @@ export default async function AdminServices(props: {
             <div className="mt-4 text-sm text-gray-600">No services yet.</div>
           ) : (
             <div className="mt-6 space-y-4">
-              {(services as ServiceRow[]).map((s, idx) => (
-                <details
-                  key={s.id}
-                  className="group rounded-2xl border border-gray-200 bg-gray-50 shadow-sm overflow-hidden"
-                  open={idx === 0} // първата отворена (по желание)
-                >
+              {services.map((s, idx) => (
+                <details key={s.id} className="group rounded-2xl border border-gray-200 bg-gray-50 shadow-sm overflow-hidden" open={idx === 0}>
                   <summary className="cursor-pointer list-none select-none">
                     <div className="flex items-center justify-between gap-3 p-5 bg-white">
                       <div className="min-w-0">
@@ -366,25 +574,16 @@ export default async function AdminServices(props: {
                           <div className="text-[15px] font-semibold text-gray-900 truncate">{s.name}</div>
 
                           {s.category ? (
-                            <span className="text-xs px-2 py-1 rounded-full border border-gray-300 bg-gray-50 text-gray-700">
-                              {s.category}
-                            </span>
+                            <span className="text-xs px-2 py-1 rounded-full border border-gray-300 bg-gray-50 text-gray-700">{s.category}</span>
                           ) : null}
 
-                          {s.is_featured ? (
-                            <span className="text-xs px-2 py-1 rounded-full bg-black text-white">Featured</span>
-                          ) : null}
+                          {s.is_featured ? <span className="text-xs px-2 py-1 rounded-full bg-black text-white">Featured</span> : null}
 
-                          <span className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-500">
-                            Sort: {s.sort_order ?? "—"}
-                          </span>
+                          <span className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-500">Sort: {s.sort_order ?? "—"}</span>
                         </div>
 
                         <div className="mt-1 text-xs text-gray-500">
-                          ID:{" "}
-                          <code className="px-2 py-1 bg-gray-50 rounded border border-gray-200">
-                            {s.id.slice(0, 8)}…
-                          </code>
+                          ID: <code className="px-2 py-1 bg-gray-50 rounded border border-gray-200">{s.id.slice(0, 8)}…</code>
                         </div>
                       </div>
 
@@ -397,25 +596,15 @@ export default async function AdminServices(props: {
                     <form className="grid md:grid-cols-6 gap-3">
                       <input type="hidden" name="key" value={key} />
                       <input type="hidden" name="id" value={s.id} />
+                      <input type="hidden" name="service_id" value={s.id} />
                       <input type="hidden" name="client_id" value={client.id} />
                       <input type="hidden" name="old_featured_image_url" value={s.featured_image_url || ""} />
-                      <input type="hidden" name="featured_image_url" value={s.featured_image_url || ""} />
 
                       <Input name="category" label="Category" defaultValue={s.category || ""} className="md:col-span-1" />
                       <Input name="name" label="Name" defaultValue={s.name} className="md:col-span-2" />
                       <Input name="price_from" label="Price" defaultValue={s.price_from ?? ""} className="md:col-span-1" />
-                      <Input
-                        name="duration_min"
-                        label="Minutes"
-                        defaultValue={s.duration_min ?? ""}
-                        className="md:col-span-1"
-                      />
-                      <Input
-                        name="sort_order"
-                        label="Sort"
-                        defaultValue={s.sort_order ?? ""}
-                        className="md:col-span-1"
-                      />
+                      <Input name="duration_min" label="Minutes" defaultValue={s.duration_min ?? ""} className="md:col-span-1" />
+                      <Input name="sort_order" label="Sort" defaultValue={s.sort_order ?? ""} className="md:col-span-1" />
 
                       <div className="md:col-span-6">
                         <label className="block space-y-1">
@@ -435,19 +624,13 @@ export default async function AdminServices(props: {
                             <input type="checkbox" name="is_featured" defaultChecked={!!s.is_featured} className="h-4 w-4" />
                             <span className="text-sm font-semibold">Featured</span>
                           </label>
-
                           <div className="text-xs text-gray-500">Upload replaces current image. Or set URL below.</div>
                         </div>
 
                         <div className="mt-4 grid md:grid-cols-6 gap-3">
                           <label className="md:col-span-3 block space-y-1">
                             <div className="text-sm text-gray-600">Replace featured image (upload)</div>
-                            <input
-                              type="file"
-                              name="featured_file"
-                              accept="image/*"
-                              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
-                            />
+                            <input type="file" name="featured_file" accept="image/*" className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3" />
                           </label>
 
                           <label className="md:col-span-3 block space-y-1">
@@ -464,30 +647,51 @@ export default async function AdminServices(props: {
                             <div className="md:col-span-6">
                               <div className="text-xs text-gray-500 mb-2">Current featured image preview:</div>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={s.featured_image_url}
-                                alt=""
-                                className="h-44 w-full max-w-2xl object-cover rounded-xl border border-gray-200"
-                              />
+                              <img src={s.featured_image_url} alt="" className="h-44 w-full max-w-2xl object-cover rounded-xl border border-gray-200" />
                             </div>
                           ) : null}
                         </div>
                       </div>
 
+                      {/* STAFF ASSIGNMENTS (EDIT) */}
+                      <div className="md:col-span-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">Assigned staff</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              If none is selected, booking falls back to Default staff (current MVP behavior).
+                            </div>
+                          </div>
+                          <a className="text-xs underline text-gray-700" href={`/admin/${slug}/staff?key=${encodeURIComponent(key)}`}>
+                            Manage staff →
+                          </a>
+                        </div>
+
+                        {staffOptions.length ? (
+                          <div className="mt-4 grid sm:grid-cols-2 md:grid-cols-3 gap-2">
+                            {staffOptions.map((st) => {
+                              const assigned = assignedByService.get(s.id)?.has(st.id) || false;
+                              return (
+                                <label key={st.id} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                                  <input type="checkbox" name="staff_ids" value={st.id} defaultChecked={assigned} className="h-4 w-4" />
+                                  <span className="text-sm text-gray-900">
+                                    {st.name} {st.is_default ? <span className="text-xs text-gray-500">(default)</span> : null}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-3 text-xs text-gray-600">No active staff yet. Add staff first, then you can assign them to services.</div>
+                        )}
+                      </div>
+
                       <div className="md:col-span-6 flex items-center gap-3 pt-2">
-                        <button
-                          type="submit"
-                          formAction={updateService}
-                          className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-                        >
+                        <button type="submit" formAction={updateService} className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
                           Save
                         </button>
 
-                        <button
-                          type="submit"
-                          formAction={deleteService}
-                          className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
-                        >
+                        <button type="submit" formAction={deleteService} className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition">
                           Delete
                         </button>
 

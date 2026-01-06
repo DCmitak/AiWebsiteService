@@ -420,3 +420,16 @@
   text-decoration: line-through;
 }
 
+
+
+
+.desktop-only { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.mobile-only { display: none; }
+
+@media (max-width: 768px) {
+  .desktop-only { display: none; }
+  .mobile-only { display: grid; gap: 10px; }
+  .mobile-only .row { display: grid; gap: 6px; }
+}
+
+.bookings-controls .spacer { flex: 1; }

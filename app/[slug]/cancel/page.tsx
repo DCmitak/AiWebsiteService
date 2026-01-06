@@ -1,3 +1,4 @@
+//app\[slug]\cancel\page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -94,7 +95,7 @@ export default async function CancelPage(props: {
 
     const { error } = await sb2
       .from("bookings")
-      .update({ status: "cancelled" })
+      .update({ status: "cancelled", cancel_token: null })
       .eq("id", b.id)
       .eq("cancel_token", tokenFromForm);
 

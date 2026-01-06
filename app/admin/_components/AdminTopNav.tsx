@@ -1,3 +1,4 @@
+// app/admin/_components/AdminTopNav.tsx
 import Link from "next/link";
 
 export default function AdminTopNav({
@@ -16,7 +17,8 @@ export default function AdminTopNav({
     | "gallery"
     | "reviews"
     | "bookings"
-    | "availability";
+    | "availability"
+    | "staff";
 }) {
   const adminBase = `/admin/${slug}`;
   const q = `?key=${encodeURIComponent(keyParam)}`;
@@ -28,6 +30,7 @@ export default function AdminTopNav({
   const reviewsUrl = `${adminBase}/reviews${q}`;
   const bookingsUrl = `${adminBase}/bookings${q}`;
   const availabilityUrl = `${adminBase}/availability${q}`;
+  const staffUrl = `${adminBase}/staff${q}`;
 
   const publicUrl = `/${slug}`;
 
@@ -44,7 +47,6 @@ export default function AdminTopNav({
       </div>
 
       <div className="flex gap-2 flex-wrap">
-        {/* Back / Dashboard */}
         <Link
           href={dashUrl}
           className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
@@ -52,50 +54,34 @@ export default function AdminTopNav({
           ← Dashboard
         </Link>
 
-        {/* Section nav */}
-        <Link
-          href={settingsUrl}
-          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "settings")}`}
-        >
+        <Link href={settingsUrl} className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "settings")}`}>
           Settings
         </Link>
 
-        <Link
-          href={servicesUrl}
-          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "services")}`}
-        >
+        <Link href={servicesUrl} className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "services")}`}>
           Services
         </Link>
 
-        <Link
-          href={galleryUrl}
-          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "gallery")}`}
-        >
+        <Link href={staffUrl} className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "staff")}`}>
+          Staff
+        </Link>
+
+        <Link href={galleryUrl} className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "gallery")}`}>
           Gallery
         </Link>
 
-        <Link
-          href={reviewsUrl}
-          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "reviews")}`}
-        >
+        <Link href={reviewsUrl} className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "reviews")}`}>
           Reviews
         </Link>
 
-        <Link
-          href={bookingsUrl}
-          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "bookings")}`}
-        >
+        <Link href={bookingsUrl} className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "bookings")}`}>
           Bookings
         </Link>
 
-        <Link
-          href={availabilityUrl}
-          className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "availability")}`}
-        >
+        <Link href={availabilityUrl} className={`px-4 py-2 rounded-lg border font-semibold transition ${pill(active === "availability")}`}>
           Availability
         </Link>
 
-        {/* Public */}
         <a
           href={publicUrl}
           target="_blank"

@@ -1,3 +1,4 @@
+// app/admin/[slug]/gallery/page.tsx
 import { supabaseServer } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import AdminTopNav from "@/app/admin/_components/AdminTopNav";
@@ -44,13 +45,14 @@ export default async function AdminGallery(props: {
   if (galleryErr) return <div className="p-8">DB error: {galleryErr.message}</div>;
 
   const list = (gallery || []) as GalleryRow[];
-
-  // Normalize empty section -> work (backward compat)
   const normalized = list.map((x) => ({ ...x, section: (x.section || "work").toLowerCase() }));
 
   const hero = normalized.filter((x) => x.section === "hero");
+  const about = normalized.filter((x) => x.section === "about");
+  const pricing = normalized.filter((x) => x.section === "pricing");
   const work = normalized.filter((x) => x.section === "work");
   const venue = normalized.filter((x) => x.section === "venue");
+  const brands = normalized.filter((x) => x.section === "brands");
 
   const toastText =
     toast === "added"
@@ -67,11 +69,10 @@ export default async function AdminGallery(props: {
       ? "Please choose a file first."
       : toast === "upload_failed"
       ? "Upload failed."
-      : toast === "hero_set"
-      ? "Hero image updated."
-      : toast === "section_changed"
-      ? "Section updated."
       : null;
+
+  // ---------- helpers ----------
+  const SINGLE_SECTIONS = new Set(["hero", "about", "pricing"]);
 
   async function addImage(formData: FormData) {
     "use server";
@@ -86,52 +87,44 @@ export default async function AdminGallery(props: {
     const section = sectionRaw || "work";
 
     const file = formData.get("image_file") as File | null;
-    const image_url_raw = (formData.get("image_url")?.toString() || "").trim();
 
-    // sort order within section: default = last + 1
     const sort_order_raw = parseInt(formData.get("sort_order")?.toString() || "", 10);
     let sort_order = Number.isFinite(sort_order_raw) && sort_order_raw > 0 ? sort_order_raw : 0;
 
-    let finalUrl = image_url_raw;
-
-    // Prefer upload if file is provided
-    if (file && file.size > 0) {
-      const MAX_BYTES = 10 * 1024 * 1024;
-      if (file.size > MAX_BYTES) throw new Error("File too large (max 10MB).");
-
-      const sb2 = supabaseServer();
-
-      const safeName = sanitizeFileName(file.name || "image");
-      const ext = safeName.includes(".") ? safeName.split(".").pop() : "jpg";
-      const path = `${clientId}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
-
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      const { error: upErr } = await sb2.storage.from(BUCKET).upload(path, buffer, {
-        contentType: file.type || "image/jpeg",
-        upsert: false,
-      });
-
-      if (upErr) throw new Error(upErr.message);
-
-      const { data: pub } = sb2.storage.from(BUCKET).getPublicUrl(path);
-      finalUrl = pub.publicUrl;
+    if (!file || file.size <= 0) {
+      revalidatePath(`/admin/${slug}/gallery`);
+      return redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=missing_file`);
     }
 
-    if (!finalUrl) throw new Error("Provide an Image URL or upload a file.");
+    const MAX_BYTES = 10 * 1024 * 1024;
+    if (file.size > MAX_BYTES) throw new Error("File too large (max 10MB).");
 
-    // If hero: enforce single hero image by moving existing hero -> work
+    const sb2 = supabaseServer();
+
+    const safeName = sanitizeFileName(file.name || "image");
+    const ext = safeName.includes(".") ? safeName.split(".").pop() : "jpg";
+    const path = `${clientId}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const { error: upErr } = await sb2.storage.from(BUCKET).upload(path, buffer, {
+      contentType: file.type || "image/jpeg",
+      upsert: false,
+    });
+
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: pub } = sb2.storage.from(BUCKET).getPublicUrl(path);
+    const finalUrl = pub.publicUrl;
+
     const sb3 = supabaseServer();
-    if (section === "hero") {
-      await sb3
-        .from("gallery_images")
-        .update({ section: "work" })
-        .eq("client_id", clientId)
-        .eq("section", "hero");
+
+    // single section enforcement: move old -> work
+    if (SINGLE_SECTIONS.has(section)) {
+      await sb3.from("gallery_images").update({ section: "work" }).eq("client_id", clientId).eq("section", section);
     }
 
-    // If sort_order not provided: compute last+1 within section
     if (!sort_order) {
       const { data: maxRows } = await sb3
         .from("gallery_images")
@@ -140,6 +133,7 @@ export default async function AdminGallery(props: {
         .eq("section", section)
         .order("sort_order", { ascending: false })
         .limit(1);
+
       const last = (maxRows?.[0]?.sort_order as number | null) ?? 0;
       sort_order = (last || 0) + 1;
     }
@@ -155,7 +149,6 @@ export default async function AdminGallery(props: {
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/gallery`);
-
     redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=added`);
   }
 
@@ -171,28 +164,24 @@ export default async function AdminGallery(props: {
     const clientId = formData.get("client_id")?.toString();
     if (!clientId) throw new Error("Missing client_id");
 
-    const image_url = (formData.get("image_url")?.toString() || "").trim();
     const sort_order = parseInt(formData.get("sort_order")?.toString() || "", 10) || 1;
     const sectionRaw = (formData.get("section")?.toString() || "work").trim().toLowerCase();
     const section = sectionRaw || "work";
 
-    if (!image_url) throw new Error("image_url is required");
-
     const sb2 = supabaseServer();
 
-    // If set to hero: enforce single hero
-    if (section === "hero") {
+    if (SINGLE_SECTIONS.has(section)) {
       await sb2
         .from("gallery_images")
         .update({ section: "work" })
         .eq("client_id", clientId)
-        .eq("section", "hero")
+        .eq("section", section)
         .neq("id", id);
     }
 
     const { error } = await sb2
       .from("gallery_images")
-      .update({ image_url, sort_order, section })
+      .update({ sort_order, section })
       .eq("id", id)
       .eq("client_id", clientId);
 
@@ -200,7 +189,6 @@ export default async function AdminGallery(props: {
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/gallery`);
-
     redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=saved`);
   }
 
@@ -254,13 +242,10 @@ export default async function AdminGallery(props: {
     if (updErr) throw new Error(updErr.message);
 
     const oldPath = storagePathFromPublicUrl(oldUrl, BUCKET);
-    if (oldPath) {
-      await sb2.storage.from(BUCKET).remove([oldPath]);
-    }
+    if (oldPath) await sb2.storage.from(BUCKET).remove([oldPath]);
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/gallery`);
-
     redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=replaced`);
   }
 
@@ -284,13 +269,10 @@ export default async function AdminGallery(props: {
     if (error) throw new Error(error.message);
 
     const path = storagePathFromPublicUrl(imageUrl, BUCKET);
-    if (path) {
-      await sb2.storage.from(BUCKET).remove([path]);
-    }
+    if (path) await sb2.storage.from(BUCKET).remove([path]);
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/gallery`);
-
     redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=deleted`);
   }
 
@@ -317,8 +299,8 @@ export default async function AdminGallery(props: {
 
     if (error) throw new Error(error.message);
 
-    const list = (rows || []) as { id: string; sort_order: number | null }[];
-    const idx = list.findIndex((x) => x.id === id);
+    const arr = (rows || []) as { id: string; sort_order: number | null }[];
+    const idx = arr.findIndex((x) => x.id === id);
 
     if (idx <= 0) {
       revalidatePath(`/${slug}`);
@@ -326,29 +308,20 @@ export default async function AdminGallery(props: {
       return redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
     }
 
-    const a = list[idx];
-    const b = list[idx - 1];
+    const a = arr[idx];
+    const b = arr[idx - 1];
 
     const aOrder = a.sort_order ?? idx + 1;
     const bOrder = b.sort_order ?? idx;
 
-    const { error: e1 } = await sb2
-      .from("gallery_images")
-      .update({ sort_order: bOrder })
-      .eq("id", a.id)
-      .eq("client_id", clientId);
+    const { error: e1 } = await sb2.from("gallery_images").update({ sort_order: bOrder }).eq("id", a.id).eq("client_id", clientId);
     if (e1) throw new Error(e1.message);
 
-    const { error: e2 } = await sb2
-      .from("gallery_images")
-      .update({ sort_order: aOrder })
-      .eq("id", b.id)
-      .eq("client_id", clientId);
+    const { error: e2 } = await sb2.from("gallery_images").update({ sort_order: aOrder }).eq("id", b.id).eq("client_id", clientId);
     if (e2) throw new Error(e2.message);
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/gallery`);
-
     redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
   }
 
@@ -375,50 +348,36 @@ export default async function AdminGallery(props: {
 
     if (error) throw new Error(error.message);
 
-    const list = (rows || []) as { id: string; sort_order: number | null }[];
-    const idx = list.findIndex((x) => x.id === id);
+    const arr = (rows || []) as { id: string; sort_order: number | null }[];
+    const idx = arr.findIndex((x) => x.id === id);
 
-    if (idx === -1 || idx >= list.length - 1) {
+    if (idx === -1 || idx >= arr.length - 1) {
       revalidatePath(`/${slug}`);
       revalidatePath(`/admin/${slug}/gallery`);
       return redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
     }
 
-    const a = list[idx];
-    const b = list[idx + 1];
+    const a = arr[idx];
+    const b = arr[idx + 1];
 
     const aOrder = a.sort_order ?? idx + 1;
     const bOrder = b.sort_order ?? idx + 2;
 
-    const { error: e1 } = await sb2
-      .from("gallery_images")
-      .update({ sort_order: bOrder })
-      .eq("id", a.id)
-      .eq("client_id", clientId);
+    const { error: e1 } = await sb2.from("gallery_images").update({ sort_order: bOrder }).eq("id", a.id).eq("client_id", clientId);
     if (e1) throw new Error(e1.message);
 
-    const { error: e2 } = await sb2
-      .from("gallery_images")
-      .update({ sort_order: aOrder })
-      .eq("id", b.id)
-      .eq("client_id", clientId);
+    const { error: e2 } = await sb2.from("gallery_images").update({ sort_order: aOrder }).eq("id", b.id).eq("client_id", clientId);
     if (e2) throw new Error(e2.message);
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/gallery`);
-
     redirect(`/admin/${slug}/gallery?key=${encodeURIComponent(key)}&toast=moved`);
   }
 
   return (
     <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
       <div className="max-w-6xl mx-auto space-y-6">
-        <AdminTopNav
-          slug={client.slug}
-          businessName={`${client.business_name} — Gallery`}
-          keyParam={key}
-          active="gallery"
-        />
+        <AdminTopNav slug={client.slug} businessName={`${client.business_name} — Gallery`} keyParam={key} active="gallery" />
 
         {toastText ? (
           <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
@@ -427,9 +386,18 @@ export default async function AdminGallery(props: {
         ) : null}
 
         {/* ADD NEW */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="font-semibold mb-4">Add image</div>
-
+        <section className="rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50/70 p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="h-9 w-9 rounded-lg bg-black text-white grid place-items-center text-lg">
+              +
+            </div>
+            <div>
+              <div className="font-semibold">Add new image</div>
+              <div className="text-xs text-gray-500">
+                Upload an image and assign it to a section
+              </div>
+            </div>
+          </div>
           <form action={addImage} className="grid md:grid-cols-6 gap-3">
             <input type="hidden" name="key" value={key} />
             <input type="hidden" name="client_id" value={client.id} />
@@ -442,10 +410,10 @@ export default async function AdminGallery(props: {
                 accept="image/*"
                 className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
               />
-              <div className="text-xs text-gray-500">Prefer upload. If empty, Image URL below will be used.</div>
+              <div className="text-xs text-gray-500">Only uploads are supported.</div>
             </label>
 
-            <label className="block space-y-1 md:col-span-2">
+            <label className="block space-y-1 md:col-span-3">
               <div className="text-sm text-gray-600">Section</div>
               <select
                 name="section"
@@ -453,72 +421,42 @@ export default async function AdminGallery(props: {
                 className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
               >
                 <option value="hero">Hero (1 image)</option>
+                <option value="about">About (1 image – За нас)</option>
+                <option value="pricing">Pricing (1 image – for Pricing v1)</option>
                 <option value="work">Work (Снимки от работата)</option>
                 <option value="venue">Venue (Галерия на обекта)</option>
+                <option value="brands">Brands (logos)</option>
               </select>
-              <div className="text-xs text-gray-500">
-                Hero is fallback for theme if Settings hero_image_url is empty.
-              </div>
+              <div className="text-xs text-gray-500">Hero/About/Pricing keep only 1 image. Previous is moved to work.</div>
             </label>
 
-            <Field name="image_url" label="Image URL (optional)" placeholder="https://..." className="md:col-span-3" />
-            <Field name="sort_order" label="Sort (optional)" placeholder="auto" className="md:col-span-1" />
+            <Field name="sort_order" label="Sort (optional)" placeholder="auto" className="md:col-span-3" />
 
             <div className="md:col-span-6">
-              <button
-                type="submit"
-                className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-              >
+              <button type="submit" className="px-5 py-3 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
                 Add
               </button>
             </div>
           </form>
         </section>
 
-        {/* HERO SECTION */}
-        <GallerySection
-          title="Hero image (Gallery fallback)"
-          subtitle="Use this only if Settings → hero_image_url is empty. Only 1 image is kept as hero."
-          items={hero}
-          keyParam={key}
-          clientId={client.id}
-          onUpdate={updateImage}
-          onReplace={replaceImage}
-          onDelete={deleteImage}
-          onUp={moveUp}
-          onDown={moveDown}
-          allowSectionChange={true}
-        />
+        <GallerySection title="Hero image — 1 image" subtitle="Used only if Settings → hero_image_url is empty." items={hero}
+          keyParam={key} clientId={client.id} onUpdate={updateImage} onReplace={replaceImage} onDelete={deleteImage} onUp={moveUp} onDown={moveDown} allowSectionChange />
 
-        {/* WORK SECTION */}
-        <GallerySection
-          title="Снимки от работата ни (work)"
-          subtitle="Used for featured cards + gallery section on the public site."
-          items={work}
-          keyParam={key}
-          clientId={client.id}
-          onUpdate={updateImage}
-          onReplace={replaceImage}
-          onDelete={deleteImage}
-          onUp={moveUp}
-          onDown={moveDown}
-          allowSectionChange={true}
-        />
+        <GallerySection title="About image (За нас) — 1 image" subtitle="Used in About section image on the public site." items={about}
+          keyParam={key} clientId={client.id} onUpdate={updateImage} onReplace={replaceImage} onDelete={deleteImage} onUp={moveUp} onDown={moveDown} allowSectionChange />
 
-        {/* VENUE SECTION */}
-        <GallerySection
-          title="Галерия на обекта (venue)"
-          subtitle="Photos of the salon/studio/clinic – used in gallery + about fallback."
-          items={venue}
-          keyParam={key}
-          clientId={client.id}
-          onUpdate={updateImage}
-          onReplace={replaceImage}
-          onDelete={deleteImage}
-          onUp={moveUp}
-          onDown={moveDown}
-          allowSectionChange={true}
-        />
+        <GallerySection title="Pricing image — 1 image" subtitle="Used in Pricing layout v1 (image on the left)." items={pricing}
+          keyParam={key} clientId={client.id} onUpdate={updateImage} onReplace={replaceImage} onDelete={deleteImage} onUp={moveUp} onDown={moveDown} allowSectionChange />
+
+        <GallerySection title="Снимки от работата ни (work)" subtitle="Used for featured cards + gallery section on the public site." items={work}
+          keyParam={key} clientId={client.id} onUpdate={updateImage} onReplace={replaceImage} onDelete={deleteImage} onUp={moveUp} onDown={moveDown} allowSectionChange />
+
+        <GallerySection title="Галерия на обекта (venue)" subtitle="Photos of the salon/studio/clinic – used in gallery + fallbacks." items={venue}
+          keyParam={key} clientId={client.id} onUpdate={updateImage} onReplace={replaceImage} onDelete={deleteImage} onUp={moveUp} onDown={moveDown} allowSectionChange />
+
+        <GallerySection title="Brands (logos)" subtitle="Logos shown in a grid section on the public site." items={brands}
+          keyParam={key} clientId={client.id} onUpdate={updateImage} onReplace={replaceImage} onDelete={deleteImage} onUp={moveUp} onDown={moveDown} allowSectionChange />
 
         <p className="text-sm text-gray-500">
           * Засега достъпът е с <code>?key=</code>. По-късно го заменяме с login.
@@ -528,8 +466,6 @@ export default async function AdminGallery(props: {
   );
 }
 
-/* ---------------- Gallery section component ---------------- */
-
 function GallerySection(props: {
   title: string;
   subtitle?: string;
@@ -537,7 +473,6 @@ function GallerySection(props: {
   keyParam?: string;
   clientId: string;
   allowSectionChange?: boolean;
-
   onUpdate: (fd: FormData) => Promise<void>;
   onReplace: (fd: FormData) => Promise<void>;
   onDelete: (fd: FormData) => Promise<void>;
@@ -568,7 +503,6 @@ function GallerySection(props: {
                 <img src={g.image_url} alt="" className="w-full h-52 object-cover" />
               </div>
 
-              {/* Replace image */}
               <form action={onReplace} className="mt-4 rounded-lg border border-gray-200 p-3 bg-gray-50">
                 <input type="hidden" name="key" value={keyParam} />
                 <input type="hidden" name="id" value={g.id} />
@@ -580,30 +514,21 @@ function GallerySection(props: {
                   <div className="flex-1">
                     <label className="block space-y-1">
                       <div className="text-xs text-gray-600">Upload new file</div>
-                      <input
-                        type="file"
-                        name="replace_file"
-                        accept="image/*"
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2"
-                      />
+                      <input type="file" name="replace_file" accept="image/*" className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2" />
                     </label>
                   </div>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-                  >
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
                     Replace
                   </button>
                 </div>
               </form>
 
-              {/* Edit / reorder / delete */}
               <form className="grid grid-cols-6 gap-3 mt-4">
                 <input type="hidden" name="key" value={keyParam} />
                 <input type="hidden" name="id" value={g.id} />
                 <input type="hidden" name="client_id" value={clientId} />
+                <input type="hidden" name="image_url" value={g.image_url} />
 
-                <Input name="image_url" label="URL" defaultValue={g.image_url} className="col-span-6" />
                 <Input name="sort_order" label="Sort" defaultValue={g.sort_order ?? ""} className="col-span-2" />
 
                 {allowSectionChange ? (
@@ -615,8 +540,11 @@ function GallerySection(props: {
                       className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
                     >
                       <option value="hero">hero</option>
+                      <option value="about">about</option>
+                      <option value="pricing">pricing</option>
                       <option value="work">work</option>
                       <option value="venue">venue</option>
+                      <option value="brands">brands</option>
                     </select>
                   </label>
                 ) : (
@@ -624,39 +552,19 @@ function GallerySection(props: {
                 )}
 
                 <div className="col-span-6 flex items-end justify-end gap-2">
-                  <button
-                    formAction={onUp}
-                    type="submit"
-                    className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-                    title="Move up"
-                    aria-label="Move up"
-                  >
+                  <button formAction={onUp} type="submit" className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition" title="Move up" aria-label="Move up">
                     ↑
                   </button>
 
-                  <button
-                    formAction={onDown}
-                    type="submit"
-                    className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-                    title="Move down"
-                    aria-label="Move down"
-                  >
+                  <button formAction={onDown} type="submit" className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition" title="Move down" aria-label="Move down">
                     ↓
                   </button>
 
-                  <button
-                    formAction={onUpdate}
-                    type="submit"
-                    className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition"
-                  >
+                  <button formAction={onUpdate} type="submit" className="px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
                     Save
                   </button>
 
-                  <button
-                    formAction={onDelete}
-                    type="submit"
-                    className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition"
-                  >
+                  <button formAction={onDelete} type="submit" className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition">
                     Delete
                   </button>
                 </div>
@@ -670,8 +578,6 @@ function GallerySection(props: {
     </section>
   );
 }
-
-/* ---------------- Gallery helpers ---------------- */
 
 function sanitizeFileName(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9.\-_]/g, "");
@@ -689,50 +595,29 @@ function storagePathFromPublicUrl(publicUrl: string, bucket: string) {
   }
 }
 
-/* ---------------- UI helpers ---------------- */
-
-function Field({
-  name,
-  label,
-  placeholder,
-  className,
-}: {
-  name: string;
-  label: string;
-  placeholder?: string;
-  className?: string;
-}) {
+function Field({ name, label, placeholder, className }: { name: string; label: string; placeholder?: string; className?: string }) {
   return (
     <label className={`block space-y-1 ${className || ""}`}>
       <div className="text-sm text-gray-600">{label}</div>
-      <input
-        name={name}
-        placeholder={placeholder}
-        className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-      />
+      <input name={name} placeholder={placeholder} className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10" />
     </label>
   );
 }
 
-function Input({
-  name,
-  label,
-  defaultValue,
-  className,
-}: {
-  name: string;
-  label: string;
-  defaultValue: any;
-  className?: string;
-}) {
+function Input({ name, label, defaultValue, className }: { name: string; label: string; defaultValue: any; className?: string }) {
   return (
     <label className={`block space-y-1 ${className || ""}`}>
       <div className="text-sm text-gray-600">{label}</div>
-      <input
-        name={name}
-        defaultValue={String(defaultValue ?? "")}
-        className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
-      />
+      <input name={name} defaultValue={String(defaultValue ?? "")} className="w-full px-4 py-3 rounded-lg bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10" />
+    </label>
+  );
+}
+
+function ReadOnly({ label, value, className }: { label: string; value: string; className?: string }) {
+  return (
+    <label className={`block space-y-1 ${className || ""}`}>
+      <div className="text-sm text-gray-600">{label}</div>
+      <div className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-700 break-all">{value || "—"}</div>
     </label>
   );
 }

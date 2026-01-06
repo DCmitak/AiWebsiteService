@@ -48,14 +48,36 @@ const WEEKDAYS = [
 
 function toHHMM(value: string | null | undefined, fallback: string) {
   if (!value) return fallback;
-  return value.slice(0, 5); // "09:00:00" -> "09:00"
+  return value.slice(0, 5);
+}
+
+async function ensureSeedWorkingHours(sb: ReturnType<typeof supabaseServer>, args: { clientId: string; staffId: string }) {
+  const { data: existing } = await sb
+    .from("staff_working_hours")
+    .select("weekday")
+    .eq("client_id", args.clientId)
+    .eq("staff_id", args.staffId)
+    .limit(1);
+
+  if (existing && existing.length > 0) return;
+
+  const rows = WEEKDAYS.map((d) => ({
+    client_id: args.clientId,
+    staff_id: args.staffId,
+    weekday: d.key,
+    start_time: "09:00",
+    end_time: "18:00",
+    is_closed: d.key === 0 || d.key === 6,
+  }));
+
+  await sb.from("staff_working_hours").insert(rows);
 }
 
 export default async function AdminAvailability(props: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ key?: string; toast?: string }>;
+  searchParams: Promise<{ key?: string; toast?: string; staffId?: string }>;
 }) {
-  const [{ slug }, { key, toast }] = await Promise.all([props.params, props.searchParams]);
+  const [{ slug }, { key, toast, staffId: staffIdParam }] = await Promise.all([props.params, props.searchParams]);
 
   if (!key || key !== process.env.ADMIN_KEY) {
     return <div className="p-8">Unauthorized</div>;
@@ -73,78 +95,64 @@ export default async function AdminAvailability(props: {
   if (clientErr) return <div className="p-8">Error loading client</div>;
   if (!client) return <div className="p-8">Client not found</div>;
 
-  // Snapshot primitives (TS-safe for server actions)
   const clientId = client.id;
   const businessName = client.business_name;
   const keyParam = key;
 
-  // ---- Seed booking_settings
+  // Ensure booking_settings exists
   await sb.from("booking_settings").upsert({ client_id: clientId }, { onConflict: "client_id" });
 
-  // ---- Default staff
-  let { data: staff, error: staffErr } = await sb
+  // Load staff list
+  const { data: staffList, error: staffErr } = await sb
     .from("staff")
     .select("id, client_id, name, is_active, is_default")
     .eq("client_id", clientId)
-    .eq("is_default", true)
-    .maybeSingle<StaffRow>();
+    .order("is_default", { ascending: false })
+    .order("is_active", { ascending: false })
+    .order("name", { ascending: true })
+    .returns<StaffRow[]>();
 
   if (staffErr) return <div className="p-8">Error loading staff</div>;
 
-  if (!staff) {
+  // Ensure there is at least one staff (create default if none)
+  let staffArr = staffList || [];
+  if (staffArr.length === 0) {
     const { data: created, error: createErr } = await sb
       .from("staff")
-      .insert({
-        client_id: clientId,
-        name: businessName,
-        is_default: true,
-      })
+      .insert({ client_id: clientId, name: businessName, is_default: true, is_active: true })
       .select("id, client_id, name, is_active, is_default")
       .single<StaffRow>();
 
     if (createErr || !created) return <div className="p-8">Error creating default staff</div>;
-    staff = created;
+    staffArr = [created];
   }
 
-  const staffId = staff.id;
+  const defaultStaffId = staffArr.find((s) => s.is_default)?.id || staffArr[0].id;
 
-  // ---- Seed working hours if missing
-  const { data: existingHours, error: existingErr } = await sb
-    .from("staff_working_hours")
-    .select("weekday")
-    .eq("staff_id", staffId);
+  // Selected staffId (from query or default)
+  const selectedStaffId =
+    (staffIdParam && staffArr.some((s) => s.id === staffIdParam) ? staffIdParam : null) || defaultStaffId;
 
-  if (existingErr) return <div className="p-8">Error loading working hours</div>;
+  // Seed working hours for selected staff (if missing)
+  await ensureSeedWorkingHours(sb, { clientId, staffId: selectedStaffId });
 
-  if (!existingHours || existingHours.length === 0) {
-    const rows = WEEKDAYS.map((d) => ({
-      client_id: clientId,
-      staff_id: staffId,
-      weekday: d.key,
-      start_time: "09:00",
-      end_time: "18:00",
-      is_closed: d.key === 0 || d.key === 6, // Sat/Sun closed
-    }));
-
-    const { error: seedErr } = await sb.from("staff_working_hours").insert(rows);
-    if (seedErr) return <div className="p-8">Error seeding working hours</div>;
-  }
-
-  // ---- Load working hours
+  // Load working hours for selected staff
   const { data: workingHours, error: whErr } = await sb
     .from("staff_working_hours")
     .select("id, client_id, staff_id, weekday, start_time, end_time, is_closed")
-    .eq("staff_id", staffId)
+    .eq("client_id", clientId)
+    .eq("staff_id", selectedStaffId)
     .order("weekday")
     .returns<WorkingHoursRow[]>();
 
   if (whErr) return <div className="p-8">Error loading working hours</div>;
 
-  // ---- Load time off
+  // Load time off for selected staff
   const { data: timeOff, error: toErr } = await sb
     .from("staff_time_off")
     .select("id, client_id, staff_id, start_at, end_at, reason")
-    .eq("staff_id", staffId)
+    .eq("client_id", clientId)
+    .eq("staff_id", selectedStaffId)
     .order("start_at")
     .returns<TimeOffRow[]>();
 
@@ -153,9 +161,19 @@ export default async function AdminAvailability(props: {
   // ======================
   // SERVER ACTIONS
   // ======================
+  async function changeStaff(formData: FormData) {
+    "use server";
+    const key = String(formData.get("key") || "");
+    const staffId = String(formData.get("staff_id") || "");
+    redirect(`/admin/${slug}/availability?key=${encodeURIComponent(key)}&staffId=${encodeURIComponent(staffId)}`);
+  }
+
   async function saveHours(formData: FormData) {
     "use server";
     const sb = supabaseServer();
+
+    const staffId = String(formData.get("staff_id") || "");
+    if (!staffId) redirect(`/admin/${slug}/availability?key=${encodeURIComponent(keyParam)}&toast=error`);
 
     for (const day of WEEKDAYS) {
       const closed = formData.get(`closed_${day.key}`) === "on";
@@ -176,19 +194,20 @@ export default async function AdminAvailability(props: {
     }
 
     revalidatePath(`/admin/${slug}/availability`);
-    redirect(`/admin/${slug}/availability?key=${keyParam}&toast=saved`);
+    redirect(`/admin/${slug}/availability?key=${encodeURIComponent(keyParam)}&staffId=${encodeURIComponent(staffId)}&toast=saved`);
   }
 
   async function addTimeOff(formData: FormData) {
     "use server";
     const sb = supabaseServer();
 
+    const staffId = String(formData.get("staff_id") || "");
     const start_at = formData.get("start_at") as string | null;
     const end_at = formData.get("end_at") as string | null;
     const reason = (formData.get("reason") as string | null) || null;
 
-    if (!start_at || !end_at) {
-      redirect(`/admin/${slug}/availability?key=${keyParam}&toast=error`);
+    if (!staffId || !start_at || !end_at) {
+      redirect(`/admin/${slug}/availability?key=${encodeURIComponent(keyParam)}&toast=error`);
     }
 
     await sb.from("staff_time_off").insert({
@@ -200,7 +219,7 @@ export default async function AdminAvailability(props: {
     });
 
     revalidatePath(`/admin/${slug}/availability`);
-    redirect(`/admin/${slug}/availability?key=${keyParam}&toast=added`);
+    redirect(`/admin/${slug}/availability?key=${encodeURIComponent(keyParam)}&staffId=${encodeURIComponent(staffId)}&toast=added`);
   }
 
   async function deleteTimeOff(formData: FormData) {
@@ -208,15 +227,29 @@ export default async function AdminAvailability(props: {
     const sb = supabaseServer();
 
     const id = formData.get("id") as string | null;
-    if (!id) {
-      redirect(`/admin/${slug}/availability?key=${keyParam}&toast=error`);
+    const staffId = String(formData.get("staff_id") || "");
+    if (!id || !staffId) {
+      redirect(`/admin/${slug}/availability?key=${encodeURIComponent(keyParam)}&toast=error`);
     }
 
     await sb.from("staff_time_off").delete().eq("id", id);
 
     revalidatePath(`/admin/${slug}/availability`);
-    redirect(`/admin/${slug}/availability?key=${keyParam}&toast=deleted`);
+    redirect(`/admin/${slug}/availability?key=${encodeURIComponent(keyParam)}&staffId=${encodeURIComponent(staffId)}&toast=deleted`);
   }
+
+  const toastText =
+    toast === "saved"
+      ? "Работното време е запазено."
+      : toast === "added"
+      ? "Периодът е блокиран."
+      : toast === "deleted"
+      ? "Блокировката е премахната."
+      : toast === "error"
+      ? "Възникна грешка. Моля опитай отново."
+      : null;
+
+  const selectedStaffName = staffArr.find((s) => s.id === selectedStaffId)?.name || "—";
 
   // ======================
   // RENDER
@@ -226,28 +259,42 @@ export default async function AdminAvailability(props: {
       <div className="max-w-6xl mx-auto space-y-6">
         <AdminTopNav slug={slug} businessName={businessName} keyParam={keyParam} active="dashboard" />
 
-        <div>
-          <h1 className="text-2xl font-semibold">Работно време</h1>
-          <p className="text-sm text-gray-600">
-            Настрой часовете по дни. Събота и неделя са почивни по подразбиране.
-          </p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold">Работно време</h1>
+            <p className="text-sm text-gray-600">Настрой часовете по дни за избрания специалист.</p>
+          </div>
+
+          <form action={changeStaff} className="bg-white border rounded-xl p-3 flex items-center gap-3">
+            <input type="hidden" name="key" value={keyParam} />
+            <label className="text-sm text-gray-600">Специалист:</label>
+            <select
+              name="staff_id"
+              defaultValue={selectedStaffId}
+              className="border rounded-lg px-3 py-2 text-sm bg-white"
+            >
+              {staffArr
+                .filter((s) => s.is_active)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.is_default ? " (default)" : ""}
+                  </option>
+                ))}
+            </select>
+            <button className="px-3 py-2 rounded-lg bg-black text-white text-sm">Покажи</button>
+          </form>
         </div>
 
-        {toast === "saved" && (
-          <div className="bg-green-100 text-green-800 p-3 rounded">Работното време е запазено.</div>
-        )}
-        {toast === "added" && (
-          <div className="bg-green-100 text-green-800 p-3 rounded">Периодът е блокиран.</div>
-        )}
-        {toast === "deleted" && (
-          <div className="bg-green-100 text-green-800 p-3 rounded">Блокировката е премахната.</div>
-        )}
-        {toast === "error" && (
-          <div className="bg-red-100 text-red-800 p-3 rounded">Възникна грешка. Моля опитай отново.</div>
-        )}
+        {toastText ? <div className="p-3 rounded bg-white border text-sm">{toastText}</div> : null}
+
+        <div className="text-sm text-gray-700">
+          Редактираш график за: <b>{selectedStaffName}</b>
+        </div>
 
         {/* WORKING HOURS */}
         <form action={saveHours} className="space-y-4 bg-white p-6 rounded shadow">
+          <input type="hidden" name="staff_id" value={selectedStaffId} />
           <h2 className="text-lg font-semibold">Седмичен график</h2>
 
           {WEEKDAYS.map((day) => {
@@ -279,6 +326,8 @@ export default async function AdminAvailability(props: {
           <h2 className="text-lg font-semibold">Блокирай период</h2>
 
           <form action={addTimeOff} className="flex gap-3 flex-wrap">
+            <input type="hidden" name="staff_id" value={selectedStaffId} />
+
             <div className="flex flex-col gap-1">
               <label className="text-sm text-gray-600">От</label>
               <input type="datetime-local" name="start_at" required className="border px-2 py-1 rounded" />
@@ -291,12 +340,7 @@ export default async function AdminAvailability(props: {
 
             <div className="flex flex-col gap-1 min-w-[220px]">
               <label className="text-sm text-gray-600">Причина (по желание)</label>
-              <input
-                type="text"
-                name="reason"
-                placeholder="напр. личен ангажимент"
-                className="border px-2 py-1 rounded"
-              />
+              <input type="text" name="reason" placeholder="напр. личен ангажимент" className="border px-2 py-1 rounded" />
             </div>
 
             <div className="flex items-end">
@@ -317,6 +361,7 @@ export default async function AdminAvailability(props: {
 
                   <form action={deleteTimeOff}>
                     <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="staff_id" value={selectedStaffId} />
                     <button className="text-red-600 hover:underline">Изтрий</button>
                   </form>
                 </li>
