@@ -423,7 +423,7 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
       {pricingLayout === "v2" ? (
         // V2: APP-STYLE (NO IMAGE)
         <section id="pricing" className="bg-[#F6EEE9] border-t border-black/10">
-          <div className="mx-auto max-w-4xl px-6 py-14 md:py-18">
+          <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
             <div className="flex items-end justify-between gap-6 flex-wrap">
               <div>
                 <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
@@ -441,8 +441,6 @@ export default function MinimalTheme({ client, settings, services, gallery, revi
             <div className="mt-6">
               <ServicesTabsV2 services={svc} primary={primary} slug={client.slug} />
             </div>
-
-            <div className="mt-5 text-xs text-black/45">Ако не виждаш свободни часове, избери друга дата.</div>
           </div>
         </section>
       ) : (

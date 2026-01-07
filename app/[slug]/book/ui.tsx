@@ -1,3 +1,4 @@
+//app\[slug]\book\ui.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -87,14 +88,23 @@ export default function BookingClient({
 
   const timeZone = data?.timeZone || "Europe/Sofia";
 
-  async function loadAvailability(nextDate: string, nextStaffId?: string) {
-    setUiError(null);
-    setSuccessId(null);
-    setSelected(null);
+  async function loadAvailability(
+    nextDate: string,
+    nextStaffId?: string,
+    opts?: { preserveMessages?: boolean; preserveSelected?: boolean }
+  ) {
+    const preserveMessages = !!opts?.preserveMessages;
+    const preserveSelected = !!opts?.preserveSelected;
+
+    if (!preserveMessages) {
+      setUiError(null);
+      setSuccessId(null);
+    }
+    if (!preserveSelected) {
+      setSelected(null);
+    }
 
     const sid = (nextStaffId ?? staffId).trim();
-    // IMPORTANT: if staff selector exists and sid is empty, avoid calling
-    // (backend can still fallback, but this prevents odd UI flickers)
     const staffArg = sid ? sid : undefined;
 
     try {
@@ -113,6 +123,7 @@ export default function BookingClient({
       setUiError("Не успяхме да заредим свободните часове. Моля опитай отново.");
     }
   }
+
 
   // Initial load: staff options -> preselect -> availability
   useEffect(() => {
@@ -172,34 +183,54 @@ export default function BookingClient({
       setUiError("Моля изберете дата и начален час.");
       return;
     }
+
+    // Snapshot (за да няма race ако user клика докато submit тече)
+    const snapDate = date;
+    const snapStaffId = staffId.trim() || "";
+    const snapStartIso = selected.startIso;
+
     setUiError(null);
 
     startSubmit(async () => {
       const result: CreateBookingResult = await createBooking({
         slug,
         serviceId,
-        startIso: selected.startIso,
+        startIso: snapStartIso,
         customerName: name,
         customerPhone: phone,
         customerEmail: email,
         customerNote: note,
-        staffId: staffId.trim() || undefined,
+        staffId: snapStaffId || undefined,
       });
 
       if (result.ok) {
         setSuccessId(result.bookingId);
+
+        // По избор: рефреш на слотовете, но без да триеш success message-а
+        await loadAvailability(snapDate, snapStaffId || undefined, {
+          preserveMessages: true,    // не пипай success/uiError
+          preserveSelected: false,   // махни selected (за да не стои маркиран)
+        });
+
         return;
       }
 
       if (result.reason === "slot_taken") {
         setUiError(result.message);
-        await loadAvailability(date);
+
+        // Рефрешни availability за същата дата/специалист
+        await loadAvailability(snapDate, snapStaffId || undefined, {
+          preserveMessages: true,   // запази uiError (за да се вижда)
+          preserveSelected: false,
+        });
+
         return;
       }
 
       setUiError(result.message);
     });
   }
+
 
   const showStaffStep = staffOptions.length > 1;
   const readyForAvailability = !showStaffStep || !!staffId;
@@ -337,14 +368,22 @@ export default function BookingClient({
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
             {slots.map((s) => {
               const active = selected?.startIso === s.startIso;
+              const disabled = isPending || isSubmitting;
+
               return (
                 <button
                   key={s.startIso}
                   type="button"
-                  onClick={() => setSelected(s)}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) setSelected(s);
+                  }}
                   className={[
-                    "border rounded px-2 py-2 text-sm",
-                    active ? "bg-black text-white border-black" : "bg-white hover:bg-gray-50",
+                    "border rounded px-2 py-2 text-sm transition",
+                    active
+                      ? "bg-black text-white border-black"
+                      : "bg-white hover:bg-gray-50",
+                    disabled ? "opacity-60 cursor-not-allowed hover:bg-white" : "",
                   ].join(" ")}
                 >
                   {s.label}
@@ -354,6 +393,7 @@ export default function BookingClient({
           </div>
         )}
       </div>
+
 
       {/* Step 3: Confirmation (оставям ти структурата, но давам работещо минимално) */}
       <div className="bg-white p-6 rounded shadow space-y-4">

@@ -1,42 +1,40 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Review } from "../types";
+import "./ReviewsCarousel.css";
 
 type Props = {
   reviews: Review[];
   primary?: string;
   autoplayMs?: number;
+  /** background color of the section (must match Minimal section background) */
+  bg?: string;
 };
 
 export default function ReviewsCarousel({
   reviews,
   primary = "#B2773D",
   autoplayMs = 3500,
+  bg = "#F7EFEE",
 }: Props) {
-  const items = Array.isArray(reviews) ? reviews.filter(Boolean) : [];
+  const items = useMemo(() => (Array.isArray(reviews) ? reviews.filter(Boolean) : []), [reviews]);
   const len = items.length;
 
+  // IMPORTANT: never conditionally call hooks -> no early return before hooks
   const [perView, setPerView] = useState(1);
-
   const [withAnim, setWithAnim] = useState(true);
-  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [index, setIndex] = useState(0);
+
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
 
-  const timerRef = useRef<number | null>(null);
+  const intervalRef = useRef<number | null>(null);
+  const resumeRef = useRef<number | null>(null);
 
-  // drag refs
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
   const dragXRef = useRef(0);
-
-  // clones count = perView (or len if len < perView)
-  const clones = Math.min(perView, len);
-
-  // index starts after the leading clones
-  const [index, setIndex] = useState(clones);
-
-  const canSlide = len > perView;
 
   // responsive perView
   useEffect(() => {
@@ -50,7 +48,9 @@ export default function ReviewsCarousel({
     return () => window.removeEventListener("resize", calc);
   }, []);
 
-  // build extended list: tail clones + items + head clones
+  const clones = Math.min(perView, len);
+  const canSlide = len > perView;
+
   const extended = useMemo(() => {
     if (!len) return [];
     const k = Math.min(perView, len);
@@ -59,11 +59,13 @@ export default function ReviewsCarousel({
     return [...tail, ...items, ...head];
   }, [items, len, perView]);
 
-  // When perView or len changes, reset to the first real slide seamlessly
+  // init / reset index when len or perView changes
   useEffect(() => {
-    if (!len) return;
+    if (!len) {
+      setIndex(0);
+      return;
+    }
     const k = Math.min(perView, len);
-
     setWithAnim(false);
     setIndex(k);
 
@@ -74,20 +76,43 @@ export default function ReviewsCarousel({
     });
   }, [perView, len]);
 
+  const clearResume = () => {
+    if (resumeRef.current) window.clearTimeout(resumeRef.current);
+    resumeRef.current = null;
+  };
+
   const stopAutoplay = () => {
-    if (timerRef.current) window.clearInterval(timerRef.current);
-    timerRef.current = null;
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    intervalRef.current = null;
+    clearResume();
   };
 
   const startAutoplay = () => {
     if (!canSlide) return;
     stopAutoplay();
-    timerRef.current = window.setInterval(() => {
+    intervalRef.current = window.setInterval(() => {
       setIndex((i) => i + 1);
     }, autoplayMs);
   };
 
-  // autoplay
+  const resumeAutoplayLater = (ms = 1400) => {
+    if (!canSlide) return;
+    clearResume();
+    resumeRef.current = window.setTimeout(() => startAutoplay(), ms);
+  };
+
+  // pause/resume when tab hidden
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) stopAutoplay();
+      else startAutoplay();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSlide, autoplayMs]);
+
+  // autoplay lifecycle
   useEffect(() => {
     if (!canSlide) return;
     startAutoplay();
@@ -95,61 +120,72 @@ export default function ReviewsCarousel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSlide, autoplayMs]);
 
-  // helper: jump to index WITHOUT animation, then re-enable animation next frame
   const jumpNoAnim = (to: number) => {
     setWithAnim(false);
     setIndex(to);
-
     requestAnimationFrame(() => {
-      // commit layout with no transition
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       trackRef.current?.offsetHeight;
       requestAnimationFrame(() => setWithAnim(true));
     });
   };
 
-  // seamless looping on transition end
-    const onTransitionEnd = () => {
+  // translate percent
+  const baseTranslatePct = perView ? (index * 100) / perView : 0;
+
+  const applyTransform = (dragPx = 0) => {
+    if (!trackRef.current) return;
+    trackRef.current.style.transform = `translate3d(-${baseTranslatePct}%,0,0) translate3d(${dragPx}px,0,0)`;
+  };
+
+  // sync transform
+  useEffect(() => {
+    if (!trackRef.current) return;
+    if (!isDraggingRef.current) applyTransform(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, perView]);
+
+  // sync transition
+  useEffect(() => {
+    if (!trackRef.current) return;
+    trackRef.current.style.transition = withAnim ? "transform 450ms ease" : "none";
+  }, [withAnim]);
+
+  const onTransitionEnd = () => {
     if (!len) return;
     const k = Math.min(perView, len);
 
-    if (index === k + len) {
-        jumpNoAnim(k);
-        return;
+    // passed the real items into head clones => jump back by len
+    if (index >= k + len) {
+      jumpNoAnim(index - len);
+      return;
     }
 
-    if (index === k - 1) {
-        jumpNoAnim(k + len - 1);
-        return;
+    // moved into tail clones => jump forward by len
+    if (index < k) {
+      jumpNoAnim(index + len);
+      return;
     }
-    };
+  };
 
+  // manual controls: stop autoplay immediately
   const prev = () => {
     if (!canSlide) return;
+    stopAutoplay();
     setIndex((i) => i - 1);
+    resumeAutoplayLater();
   };
 
   const next = () => {
     if (!canSlide) return;
+    stopAutoplay();
     setIndex((i) => i + 1);
+    resumeAutoplayLater();
   };
 
-  // translate step must be (100 / perView) per slide
-  const baseTranslatePct = (index * 100) / perView;
-
-  // drag adds pixel offset on top of base translate
-  const transformStyle = () => {
-    const dragPx = dragXRef.current || 0;
-    // We use translateX(%) + translateX(px) so both can combine cleanly.
-    // Negative because base is moving left; dragPx is raw pointer delta.
-    return `translateX(-${baseTranslatePct}%) translateX(${dragPx}px)`;
-  };
-
-  // pointer drag handlers
+  // drag handlers
   const onPointerDown = (e: React.PointerEvent) => {
     if (!canSlide) return;
-
-    // only left click / touch
     if (e.pointerType === "mouse" && e.button !== 0) return;
 
     stopAutoplay();
@@ -157,10 +193,7 @@ export default function ReviewsCarousel({
     startXRef.current = e.clientX;
     dragXRef.current = 0;
 
-    // no animation while dragging
     setWithAnim(false);
-
-    // capture so we continue to receive move/up
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   };
 
@@ -168,11 +201,7 @@ export default function ReviewsCarousel({
     if (!isDraggingRef.current) return;
     const dx = e.clientX - startXRef.current;
     dragXRef.current = dx;
-
-    // apply transform live
-    if (trackRef.current) {
-      trackRef.current.style.transform = transformStyle();
-    }
+    applyTransform(dx);
   };
 
   const endDrag = () => {
@@ -184,135 +213,79 @@ export default function ReviewsCarousel({
 
     const vw = viewportRef.current?.clientWidth || 1;
     const slideW = vw / perView;
-
-    // threshold: 18% of one slide width
     const threshold = slideW * 0.18;
 
-    // re-enable animation for snap/slide
     setWithAnim(true);
 
-    // decide direction
-    if (dx <= -threshold) {
-      // dragged left -> next
-      setIndex((i) => i + 1);
-    } else if (dx >= threshold) {
-      // dragged right -> prev
-      setIndex((i) => i - 1);
-    } else {
-      // snap back (index unchanged, but we must force transform back)
-      requestAnimationFrame(() => {
-        if (trackRef.current) {
-          trackRef.current.style.transform = `translateX(-${baseTranslatePct}%)`;
-        }
-      });
-    }
+    if (dx <= -threshold) setIndex((i) => i + 1);
+    else if (dx >= threshold) setIndex((i) => i - 1);
+    else requestAnimationFrame(() => applyTransform(0));
 
-    // resume autoplay after a short pause
-    window.setTimeout(() => {
-      startAutoplay();
-    }, 900);
+    resumeAutoplayLater(1400);
   };
 
-  const onPointerUp = () => endDrag();
-  const onPointerCancel = () => endDrag();
-  const onPointerLeave = () => {
-    // if the pointer leaves while dragging, treat it as end
-    if (isDraggingRef.current) endDrag();
-  };
-
-  // keep transform in sync when index changes or animation toggles
-  useEffect(() => {
-    if (!trackRef.current) return;
-    // If not dragging, ensure transform is correct and dragPx is 0
-    if (!isDraggingRef.current) {
-      trackRef.current.style.transform = `translateX(-${baseTranslatePct}%)`;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, perView]);
-
-  // keep transition style in sync
-  useEffect(() => {
-    if (!trackRef.current) return;
-    trackRef.current.style.transition = withAnim ? "transform 450ms ease" : "none";
-  }, [withAnim]);
-
+  // render guard (AFTER hooks!)
   if (!len) return null;
 
   return (
-    <div className="relative">
+    <div className="rc-wrap" style={{ ["--rc-primary" as any]: primary, ["--rc-bg" as any]: bg }}>
+      {/* VIEWPORT */}
       <div
         ref={viewportRef}
-        className="overflow-hidden select-none"
+        className="rc-viewport"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-        onPointerLeave={onPointerLeave}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onPointerLeave={() => {
+          if (isDraggingRef.current) endDrag();
+        }}
         style={{
           cursor: canSlide ? (isDraggingRef.current ? "grabbing" : "grab") : "default",
-          touchAction: "pan-y", // allow vertical scroll, we handle horizontal
+          touchAction: "pan-y",
         }}
       >
-        <div
-          ref={trackRef}
-          className="flex"
-          style={{
-            transform: `translateX(-${baseTranslatePct}%)`,
-            transition: withAnim ? "transform 450ms ease" : "none",
-            willChange: "transform",
-          }}
-          onTransitionEnd={onTransitionEnd}
-        >
+        {/* MASKS: these eliminate any “peeking” fragments at the edges */}
+        <div className="rc-mask rc-mask-left" aria-hidden />
+        <div className="rc-mask rc-mask-right" aria-hidden />
+
+        <div ref={trackRef} className="rc-track" onTransitionEnd={onTransitionEnd}>
           {extended.map((r, i) => (
             <div
               key={`${r.id ?? "rev"}-${i}`}
-              className="px-3"
+              className="rc-col"
               style={{
                 flex: `0 0 calc(100% / ${perView})`,
                 maxWidth: `calc(100% / ${perView})`,
               }}
             >
-              <ReviewCard r={r} primary={primary} />
+              <article className="rc-slide">
+                <div className="rc-head">
+                  <div className="rc-avatar" aria-hidden />
+                  <div className="rc-meta">
+                    <div className="rc-author">{r.author}</div>
+                    <div className="rc-rating">оценка: {r.rating}/5</div>
+                  </div>
+                </div>
+
+                <p className="rc-text">{r.text}</p>
+              </article>
             </div>
           ))}
         </div>
       </div>
 
+      {/* ARROWS: outside cards */}
       {canSlide ? (
         <>
-          <button
-            type="button"
-            onClick={prev}
-            aria-label="Previous reviews"
-            className="hidden md:grid place-items-center absolute left-0 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-white/80 border border-black/10 shadow hover:bg-white transition"
-          >
+          <button type="button" onClick={prev} aria-label="Previous reviews" className="rc-arrow rc-arrow-left">
             ←
           </button>
-          <button
-            type="button"
-            onClick={next}
-            aria-label="Next reviews"
-            className="hidden md:grid place-items-center absolute right-0 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-white/80 border border-black/10 shadow hover:bg-white transition"
-          >
+          <button type="button" onClick={next} aria-label="Next reviews" className="rc-arrow rc-arrow-right">
             →
           </button>
         </>
       ) : null}
-    </div>
-  );
-}
-
-function ReviewCard({ r, primary }: { r: Review; primary: string }) {
-  return (
-    <div className="bg-white border border-black/10 shadow-[0_20px_60px_rgba(0,0,0,0.08)] p-8 h-full">
-      <div className="flex items-center gap-4">
-        <div className="h-16 w-16 rounded-full border-4" style={{ borderColor: `${primary}66` }} />
-        <div className="min-w-0">
-          <div className="font-serif text-xl font-semibold truncate">{r.author}</div>
-          <div className="text-sm opacity-70">оценка: {r.rating}/5</div>
-        </div>
-      </div>
-      <p className="mt-6 opacity-80 leading-relaxed">{r.text}</p>
     </div>
   );
 }

@@ -35,7 +35,8 @@ export default function ServicesTabsV2({ services, primary, slug }: Props) {
 
   return (
     <section className="mt-6">
-      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+
         {/* LEFT: Categories (desktop) */}
         <aside className="hidden lg:block">
           <div className="sticky top-24">

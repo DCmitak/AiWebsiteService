@@ -1,14 +1,19 @@
-//app\[slug]\book\page.tsx
+// app/[slug]/book/page.tsx
 import BookingClient from "./ui";
 
-function todayYMD(timeZone = "Europe/Sofia") {
+const TZ = "Europe/Sofia";
+
+function todayYMDInSofia() {
+  // Use Date.now() to avoid any weirdness with serverless snapshots
+  const now = new Date(Date.now());
+
   // en-CA gives YYYY-MM-DD
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(now);
 }
 
 export default async function BookPage(props: {
@@ -30,7 +35,7 @@ export default async function BookPage(props: {
     );
   }
 
-  const initialDate = todayYMD("Europe/Sofia");
+  const initialDate = todayYMDInSofia();
 
   return (
     <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
