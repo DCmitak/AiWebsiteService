@@ -1,37 +1,71 @@
 // app/[slug]/themes/Luxe.tsx
-import type { PublicPayload, Review, Service } from "../types";
+import type { PublicPayload, Review, Service, GalleryImage } from "../types";
 import ServicesTabs from "../ServicesTabs";
-import ServicesTabsV2 from "../ServicesTabsV2";
-
 
 export default function LuxeTheme({ client, settings, services, gallery, reviews }: PublicPayload) {
-  const primary = settings?.primary_color || "#dca263";
-  const hero = settings?.hero_image_url || "";
-  const booking = settings?.booking_url || "#";
-  const phone = settings?.phone || "";
-  const address = settings?.address || "";
-  const hours = settings?.working_hours || "";
-  const about = settings?.about_text || "";
-  const mapUrl = settings?.google_maps_url || "";
-  const brands: string[] = Array.isArray(settings?.brands) ? (settings.brands as string[]) : [];
-  const heroTitle = (settings?.hero_title || "").trim();
-  const heroSubtitle = (settings?.hero_subtitle || "").trim();
+  const s = settings || null;
 
-  const facebook = settings?.facebook_url || "";
-  const instagram = settings?.instagram_url || "";
-  const tiktok = settings?.tiktok_url || "";
-  const youtube = settings?.youtube_url || "";
+  const primary = s?.primary_color || "#dca263";
+
+  // Use existing settings (NO hero_image_url / booking_url / brands)
+  const phone = s?.phone || "";
+  const address = s?.address || "";
+  const hours = s?.working_hours || "";
+  const about = s?.about_text || "";
+  const mapUrl = s?.google_maps_url || "";
+
+  const facebook = s?.facebook_url || "";
+  const instagram = s?.instagram_url || "";
+  const tiktok = s?.tiktok_url || "";
+  const youtube = s?.youtube_url || "";
+
+  const heroTitle = (s?.hero_title || "").trim();
+  const heroSubtitle = (s?.hero_subtitle || "").trim();
+  const categoryLabel = (s?.category_label || "").trim();
+
+  // Section copy (use your existing admin settings)
+  const servicesEyebrow = (s?.services_eyebrow || "").trim();
+  const servicesTitle = (s?.services_title || "").trim();
+  const servicesSubtitle = (s?.services_subtitle || "").trim();
+
+  const aboutEyebrow = (s?.about_eyebrow || "").trim();
+  const aboutTitle = (s?.about_title || "").trim();
+
+  const galleryEyebrow = (s?.gallery_eyebrow || "").trim();
+  const galleryTitle = (s?.gallery_title || "").trim();
+  const gallerySubtitle = (s?.gallery_subtitle || "").trim();
+
+  const reviewsEyebrow = (s?.reviews_eyebrow || "").trim();
+  const reviewsTitle = (s?.reviews_title || "").trim();
+  const reviewsSubtitle = (s?.reviews_subtitle || "").trim();
+
+  const contactEyebrow = (s?.contact_eyebrow || "").trim();
+  const contactTitle = (s?.contact_title || "").trim();
+  const contactSubtitle = (s?.contact_subtitle || "").trim();
+
+  const brandsEyebrow = (s?.brands_eyebrow || "").trim();
+  const brandsTitle = (s?.brands_title || "").trim();
+  const brandsSubtitle = (s?.brands_subtitle || "").trim();
+
+  // Hero image: from gallery section "hero" (existing system), else fallback
+  const heroImg =
+    (gallery || []).find((g) => (g.section || "").toString() === "hero")?.image_url ||
+    "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=1600&q=80";
+
+  // Brands: from gallery section "brands"
+  const brandLogos = (gallery || []).filter((g) => (g.section || "").toString() === "brands");
+
+  // Clean maps link (avoid iframe “Oops”)
+  const mapLink = mapUrl ? (mapUrl.includes("output=embed") ? mapUrl.replace("output=embed", "") : mapUrl) : "";
 
   const rev = (reviews || []) as Review[];
   const svc = (services || []) as Service[];
 
-  // clean maps link (avoid iframe “Oops”)
-  const mapLink =
-    mapUrl
-      ? mapUrl.includes("output=embed")
-        ? mapUrl.replace("output=embed", "")
-        : mapUrl
-      : "";
+  // Header branding (your existing fields)
+  const brandMode = (s?.brand_mode || "text").toString();
+  const logoUrl = (s?.logo_url || "").trim();
+  const brandText = (s?.brand_text || "").trim() || client.business_name;
+  const brandSubtext = (s?.brand_subtext || "").trim() || client.city;
 
   return (
     <main className="min-h-screen text-black bg-[#fff7fb]">
@@ -54,16 +88,26 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
           <div className={cx(siteContainer, "py-4 flex items-center justify-between gap-4")}>
             {/* brand */}
             <a href="#" className="flex items-center gap-3 min-w-0">
-              <div
-                className="h-10 w-10 rounded-full shadow-sm border border-black/10"
-                style={{
-                  background: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), ${primary})`,
-                }}
-                aria-hidden
-              />
+              {brandMode === "logo" && logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={logoUrl}
+                  alt={brandText || "Logo"}
+                  className="h-10 w-auto object-contain"
+                />
+              ) : (
+                <div
+                  className="h-10 w-10 rounded-full shadow-sm border border-black/10"
+                  style={{
+                    background: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), ${primary})`,
+                  }}
+                  aria-hidden
+                />
+              )}
+
               <div className="min-w-0 leading-tight">
-                <div className="font-semibold truncate">{client.business_name}</div>
-                <div className="text-xs text-black/55 truncate">{client.city}</div>
+                <div className="font-semibold truncate">{brandText}</div>
+                <div className="text-xs text-black/55 truncate">{brandSubtext}</div>
               </div>
             </a>
 
@@ -104,41 +148,36 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
           <div className="lg:col-span-6 space-y-7">
             <div className="flex flex-wrap items-center gap-3">
               <span className="px-3 py-1 rounded-full bg-white/70 border border-black/10 text-[12px] text-black/70">
-                Премиум маникюр • {client.city}
+                {(categoryLabel || "Премиум услуги") + " • " + client.city}
               </span>
-              <span className="text-[12px] text-black/45">
-                ✦ дълготраен гланц • чиста форма • внимание към детайла
-              </span>
+              <span className="text-[12px] text-black/45">✦ качество • детайл • комфорт</span>
             </div>
 
             {/* brand in hero */}
             <div className="flex items-center gap-3">
-              <div
-                className="h-10 w-10 rounded-full border border-black/10 shadow-sm"
-                style={{
-                  background: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), ${primary})`,
-                }}
-                aria-hidden
-              />
+              {brandMode === "logo" && logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt={brandText || "Logo"} className="h-10 w-auto object-contain" />
+              ) : (
+                <div
+                  className="h-10 w-10 rounded-full border border-black/10 shadow-sm"
+                  style={{
+                    background: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), ${primary})`,
+                  }}
+                  aria-hidden
+                />
+              )}
               <div className="leading-tight">
-                <div className="text-[13px] font-semibold tracking-wide">{client.business_name}</div>
-                <div className="text-[12px] text-black/50">{client.city}</div>
+                <div className="text-[13px] font-semibold tracking-wide">{brandText}</div>
+                <div className="text-[12px] text-black/50">{brandSubtext}</div>
               </div>
             </div>
 
-            {heroTitle ? (
-              <h1 className="lux-h text-5xl md:text-6xl lg:text-7xl leading-[0.92]">
-                {heroTitle}
-              </h1>
-            ) : null}
-
+            {heroTitle ? <h1 className="lux-h text-5xl md:text-6xl lg:text-7xl leading-[0.92]">{heroTitle}</h1> : null}
 
             {heroSubtitle ? (
-              <p className="text-lg md:text-xl text-black/60 leading-relaxed max-w-2xl">
-                {heroSubtitle}
-              </p>
+              <p className="text-lg md:text-xl text-black/60 leading-relaxed max-w-2xl">{heroSubtitle}</p>
             ) : null}
-
 
             {/* CTA row */}
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -183,14 +222,7 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
           <div className="lg:col-span-6 relative">
             <div className="relative rounded-[44px] overflow-hidden border border-black/10 shadow-2xl bg-white">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={
-                  hero ||
-                  "https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=1600&q=80"
-                }
-                alt=""
-                className="w-full h-[460px] md:h-[560px] object-cover"
-              />
+              <img src={heroImg} alt="" className="w-full h-[460px] md:h-[560px] object-cover" />
 
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.70),transparent_55%)]" />
               <div className="absolute inset-0 bg-gradient-to-t from-white/60 via-transparent to-transparent" />
@@ -200,7 +232,7 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
                   <div className="flex items-start justify-between gap-6">
                     <div className="min-w-0">
                       <div className="text-[11px] uppercase tracking-widest text-black/45">Локация</div>
-                      <div className="font-semibold truncate">{address || "София"}</div>
+                      <div className="font-semibold truncate">{address || client.city}</div>
                     </div>
                     <div className="text-right">
                       <div className="text-[11px] uppercase tracking-widest text-black/45">Работно време</div>
@@ -232,10 +264,7 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
               </div>
             </div>
 
-            <div
-              className="absolute -z-10 -top-12 -right-12 h-56 w-56 rounded-full blur-3xl opacity-25"
-              style={{ background: primary }}
-            />
+            <div className="absolute -z-10 -top-12 -right-12 h-56 w-56 rounded-full blur-3xl opacity-25" style={{ background: primary }} />
             <div className="absolute -z-10 bottom-10 -left-12 h-52 w-52 rounded-full blur-3xl opacity-18 bg-pink-200" />
           </div>
         </div>
@@ -245,9 +274,11 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
       <section id="about" className={cx(siteContainer, "pb-14 md:pb-20")}>
         <div className="grid md:grid-cols-2 gap-12 items-start">
           <div>
-            <div className="text-xs uppercase tracking-widest text-black/50">нашата философия</div>
-            <h2 className="lux-h text-3xl md:text-4xl mt-2">За нас</h2>
-            <p className="text-black/60 mt-3">Красота, стил и спокойствие — в едно преживяване.</p>
+            <div className="text-xs uppercase tracking-widest text-black/50">{aboutEyebrow || "нашата философия"}</div>
+            <h2 className="lux-h text-3xl md:text-4xl mt-2">{aboutTitle || "За нас"}</h2>
+            <p className="text-black/60 mt-3">
+              {contactSubtitle || "Красота, стил и спокойствие — в едно преживяване."}
+            </p>
           </div>
 
           <div className="bg-white/70 backdrop-blur border border-black/10 rounded-3xl p-7 shadow-sm">
@@ -262,9 +293,9 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
       <section id="services" className={cx(siteContainer, "pb-14 md:pb-20")}>
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
-            <div className="text-xs uppercase tracking-widest text-black/50">меню</div>
-            <h2 className="lux-h text-3xl md:text-4xl mt-2">Услуги и цени</h2>
-            <p className="text-black/60 mt-2">Изчистено меню, детайли при нужда.</p>
+            <div className="text-xs uppercase tracking-widest text-black/50">{servicesEyebrow || "меню"}</div>
+            <h2 className="lux-h text-3xl md:text-4xl mt-2">{servicesTitle || "Услуги и цени"}</h2>
+            <p className="text-black/60 mt-2">{servicesSubtitle || "Изчистено меню, детайли при нужда."}</p>
           </div>
 
           <a
@@ -281,30 +312,33 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
       {/* GALLERY */}
       <section id="gallery" className={cx(siteContainer, "pb-14 md:pb-20")}>
         <div>
-          <div className="text-xs uppercase tracking-widest text-black/50">галерия</div>
-          <h2 className="lux-h text-3xl md:text-4xl mt-2">Реални резултати</h2>
-          <p className="text-black/60 mt-2">Снимки от работата ни.</p>
+          <div className="text-xs uppercase tracking-widest text-black/50">{galleryEyebrow || "галерия"}</div>
+          <h2 className="lux-h text-3xl md:text-4xl mt-2">{galleryTitle || "Реални резултати"}</h2>
+          <p className="text-black/60 mt-2">{gallerySubtitle || "Снимки от работата ни."}</p>
         </div>
 
         <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-3">
-          {(gallery || []).slice(0, 9).map((img) => (
-            <div
-              key={img.id}
-              className="rounded-3xl overflow-hidden border border-black/10 bg-white shadow-sm hover:shadow-md transition"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={img.image_url} alt="" className="w-full h-44 md:h-60 object-cover" />
-            </div>
-          ))}
+          {(gallery || [])
+            .filter((img) => (img.section || "").toString() !== "brands" && (img.section || "").toString() !== "hero")
+            .slice(0, 9)
+            .map((img) => (
+              <div
+                key={img.id}
+                className="rounded-3xl overflow-hidden border border-black/10 bg-white shadow-sm hover:shadow-md transition"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.image_url} alt="" className="w-full h-44 md:h-60 object-cover" />
+              </div>
+            ))}
         </div>
       </section>
 
       {/* REVIEWS */}
       <section id="reviews" className={cx(siteContainer, "pb-14 md:pb-20")}>
         <div>
-          <div className="text-xs uppercase tracking-widest text-black/50">отзиви</div>
-          <h2 className="lux-h text-3xl md:text-4xl mt-2">Доверие</h2>
-          <p className="text-black/60 mt-2">Истински думи. Истински резултати.</p>
+          <div className="text-xs uppercase tracking-widest text-black/50">{reviewsEyebrow || "отзиви"}</div>
+          <h2 className="lux-h text-3xl md:text-4xl mt-2">{reviewsTitle || "Доверие"}</h2>
+          <p className="text-black/60 mt-2">{reviewsSubtitle || "Истински думи. Истински резултати."}</p>
         </div>
 
         <div className="mt-8 grid md:grid-cols-3 gap-4">
@@ -320,22 +354,28 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
         </div>
       </section>
 
-      {/* BRANDS */}
-      {brands.length > 0 && (
+      {/* BRANDS (from Gallery section="brands") */}
+      {brandLogos.length > 0 ? (
         <section className={cx(siteContainer, "pb-14 md:pb-20")}>
-          <h2 className="lux-h text-2xl md:text-3xl">Марките, с които работим</h2>
-          <div className="mt-5 flex flex-wrap gap-2">
-            {brands.map((b) => (
-              <span
-                key={b}
-                className="px-4 py-2 rounded-full bg-white/70 backdrop-blur border border-black/10 text-black/70"
+          <div>
+            <div className="text-xs uppercase tracking-widest text-black/50">{brandsEyebrow || "марки"}</div>
+            <h2 className="lux-h text-2xl md:text-3xl mt-2">{brandsTitle || "Марките, с които работим"}</h2>
+            {brandsSubtitle ? <p className="text-black/60 mt-2">{brandsSubtitle}</p> : null}
+          </div>
+
+          <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {brandLogos.slice(0, 10).map((img) => (
+              <div
+                key={img.id}
+                className="rounded-2xl bg-white/70 backdrop-blur border border-black/10 shadow-sm p-4 grid place-items-center"
               >
-                {b}
-              </span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.image_url} alt="" className="h-10 w-auto object-contain" />
+              </div>
             ))}
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* BOOK */}
       <section id="book" className={cx(siteContainer, "pb-14 md:pb-20")}>
@@ -344,14 +384,12 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
             <div>
               <div className="text-xs uppercase tracking-widest text-black/50">резервации</div>
               <h2 className="lux-h text-2xl md:text-3xl mt-2">Запази час</h2>
-              <p className="text-black/60 mt-2 max-w-2xl">
-                Скоро: собствен календар за салона. Засега — линк/телефон.
-              </p>
+              <p className="text-black/60 mt-2 max-w-2xl">Скоро: собствен календар за салона. Засега — телефон.</p>
             </div>
 
             <div className="flex gap-3">
               <a
-                href={booking}
+                href="#book"
                 className="px-6 py-3 rounded-full text-white font-semibold shadow-md hover:shadow-lg transition"
                 style={{ background: primary }}
               >
@@ -375,8 +413,9 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
       <section id="contact" className={cx(siteContainer, "pb-16")}>
         <div className="grid md:grid-cols-2 gap-6">
           <div className="rounded-3xl bg-white/70 backdrop-blur border border-black/10 shadow-sm p-7">
-            <div className="text-xs uppercase tracking-widest text-black/50">контакт</div>
-            <h3 className="lux-h text-xl md:text-2xl mt-2">Посети ни</h3>
+            <div className="text-xs uppercase tracking-widest text-black/50">{contactEyebrow || "контакт"}</div>
+            <h3 className="lux-h text-xl md:text-2xl mt-2">{contactTitle || "Посети ни"}</h3>
+            {contactSubtitle ? <p className="text-black/60 mt-2">{contactSubtitle}</p> : null}
 
             <div className="mt-4 space-y-2 text-black/75">
               {address && <div>📍 {address}</div>}
@@ -408,9 +447,7 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
           <div className="rounded-3xl bg-white/70 backdrop-blur border border-black/10 shadow-sm p-7">
             <div className="text-xs uppercase tracking-widest text-black/50">локация</div>
             <h3 className="lux-h text-xl md:text-2xl mt-2">Карта</h3>
-            <p className="text-black/60 mt-2">
-              Показваме линк към Google Maps (по-сигурно от embed). По-късно ще добавим embed/API.
-            </p>
+            <p className="text-black/60 mt-2">Показваме линк към Google Maps (по-сигурно от embed).</p>
 
             {mapLink ? (
               <a
@@ -439,6 +476,7 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
         </div>
       </footer>
 
+      {/* mobile bottom CTA */}
       <div className="md:hidden fixed bottom-3 left-0 right-0 px-4 z-40">
         <div className="max-w-2xl mx-auto rounded-2xl bg-white/90 backdrop-blur border border-black/10 shadow-lg p-3 flex gap-3">
           <a
@@ -449,10 +487,7 @@ export default function LuxeTheme({ client, settings, services, gallery, reviews
             Запази час
           </a>
           {phone ? (
-            <a
-              href={`tel:${phone}`}
-              className="px-4 py-3 rounded-full bg-white border border-black/10 font-semibold text-black/80"
-            >
+            <a href={`tel:${phone}`} className="px-4 py-3 rounded-full bg-white border border-black/10 font-semibold text-black/80">
               Обади се
             </a>
           ) : null}
@@ -470,10 +505,7 @@ function cx(...cls: Array<string | false | null | undefined>) {
 
 function NavLink({ href, label }: { href: string; label: string }) {
   return (
-    <a
-      href={href}
-      className="px-4 py-2 rounded-full text-sm font-medium text-black/75 hover:text-black hover:bg-black/[0.03] transition"
-    >
+    <a href={href} className="px-4 py-2 rounded-full text-sm font-medium text-black/75 hover:text-black hover:bg-black/[0.03] transition">
       {label}
     </a>
   );
@@ -484,14 +516,7 @@ function Stars({ count, primary }: { count: number; primary: string }) {
   return (
     <div className="flex gap-1" aria-label={`${count} stars`}>
       {stars.map((on, i) => (
-        <svg
-          key={i}
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill={on ? primary : "none"}
-          xmlns="http://www.w3.org/2000/svg"
-        >
+        <svg key={i} width="16" height="16" viewBox="0 0 24 24" fill={on ? primary : "none"} xmlns="http://www.w3.org/2000/svg">
           <path
             d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2z"
             stroke={on ? primary : "rgba(0,0,0,0.25)"}
@@ -556,11 +581,7 @@ function SocialIcon({
             stroke="currentColor"
             strokeWidth="1.7"
           />
-          <path
-            d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
+          <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" stroke="currentColor" strokeWidth="1.7" />
           <path d="M17 7.2h.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
       )}
@@ -573,13 +594,7 @@ function SocialIcon({
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <path
-            d="M14 3c.6 2.7 2.3 4.3 5 4.6"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <path d="M14 3c.6 2.7 2.3 4.3 5 4.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
       {kind === "youtube" && (
@@ -598,22 +613,7 @@ function SocialIcon({
 }
 
 const demoReviews: Review[] = [
-  {
-    id: "d1",
-    author: "Мария П.",
-    rating: 5,
-    text: "Най-добрият гел лак, който съм имала. Чисто, стилно и много внимателно отношение.",
-  },
-  {
-    id: "d2",
-    author: "Елица Н.",
-    rating: 5,
-    text: "Перфектна форма и детайл. Атмосферата е спокойна и луксозна.",
-  },
-  {
-    id: "d3",
-    author: "Деси К.",
-    rating: 5,
-    text: "Запазих час лесно, обслужването беше на ниво. Препоръчвам с две ръце.",
-  },
+  { id: "d1", author: "Мария П.", rating: 5, text: "Най-добрият гел лак, който съм имала. Чисто, стилно и много внимателно отношение." },
+  { id: "d2", author: "Елица Н.", rating: 5, text: "Перфектна форма и детайл. Атмосферата е спокойна и луксозна." },
+  { id: "d3", author: "Деси К.", rating: 5, text: "Запазих час лесно, обслужването беше на ниво. Препоръчвам с две ръце." },
 ];
