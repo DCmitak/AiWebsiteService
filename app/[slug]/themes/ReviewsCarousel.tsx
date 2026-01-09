@@ -1,3 +1,4 @@
+//app\[slug]\themes\ReviewsCarousel.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
