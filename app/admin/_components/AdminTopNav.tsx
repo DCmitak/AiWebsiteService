@@ -92,14 +92,7 @@ export default function AdminTopNav({
 
       {/* Mobile nav (no JS): hamburger dropdown via <details> */}
       <div className="md:hidden w-full">
-        <div className="flex items-center gap-2 justify-end">
-          <Link
-            href={`${adminBase}${q}`}
-            className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 font-semibold hover:bg-gray-100 transition"
-          >
-            Dashboard
-          </Link>
-
+        <div className="flex items-center justify-end">
           <details className="relative">
             <summary className="list-none cursor-pointer select-none px-4 py-2 rounded-lg bg-black text-white font-semibold hover:bg-gray-800 transition">
               ☰ {activeLabel}
@@ -113,19 +106,17 @@ export default function AdminTopNav({
               </div>
 
               <div className="p-2 space-y-1">
-                {items
-                  .filter((x) => x.key !== "dashboard")
-                  .map((x) => (
-                    <Link
-                      key={x.key}
-                      href={x.href}
-                      className={`block px-3 py-2 rounded-lg text-sm font-semibold transition ${menuItem(
-                        active === x.key
-                      )}`}
-                    >
-                      {x.label}
-                    </Link>
-                  ))}
+                {items.map((x) => (
+                  <Link
+                    key={x.key}
+                    href={x.href}
+                    className={`block px-3 py-2 rounded-lg text-sm font-semibold transition ${menuItem(
+                      active === x.key
+                    )}`}
+                  >
+                    {x.label}
+                  </Link>
+                ))}
 
                 <a
                   href={publicUrl}

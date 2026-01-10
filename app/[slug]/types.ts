@@ -92,6 +92,9 @@ export type SiteSettings = {
   gallery_work_title?: string | null;
   gallery_venue_title?: string | null;
 
+  venue_gallery_eyebrow?: string | null;
+  venue_gallery_subtitle?: string | null;
+
   reviews_eyebrow?: string | null;
   reviews_title?: string | null;
   reviews_subtitle?: string | null;
