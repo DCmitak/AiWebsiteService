@@ -8,8 +8,8 @@ import { DateTime } from "luxon";
 
 import BookingsCalendar, { type CalendarEvent } from "./_components/BookingsCalendar";
 import BookingsPrimaryNav from "./_components/BookingsPrimaryNav";
-import BookingsCalendarControls from "./_components/BookingsCalendarControls";
 import BookingsTableControls from "./_components/BookingsTableControls";
+import BookingsRescheduleButton from "./_components/BookingsRescheduleButton";
 
 import "./_components/BookingsToolbar.css";
 
@@ -92,7 +92,7 @@ function buildBaseReturnTo({
     if (staff) sp.set("staff", staff);
   } else {
     sp.set("status", (status || "pending").toLowerCase());
-    if (staff) sp.set("staff", staff); // ✅ добави това
+    if (staff) sp.set("staff", staff);
   }
 
   return `/admin/${slug}/bookings?${sp.toString()}`;
@@ -150,7 +150,9 @@ export default async function AdminBookings(props: {
 
   const normalizedCalendarDate = activeMode === "week" ? normWeekMonday(safeCalendarDate, tz) : safeCalendarDate;
 
-  const tableHref = `/admin/${slug}/bookings?key=${key}&view=table&status=${encodeURIComponent(filter || "pending")}&staff=${encodeURIComponent(activeStaff)}`;
+  const tableHref = `/admin/${slug}/bookings?key=${key}&view=table&status=${encodeURIComponent(
+    filter || "pending"
+  )}&staff=${encodeURIComponent(activeStaff)}`;
   const calendarHref = `/admin/${slug}/bookings?key=${key}&view=calendar&mode=${activeMode}&date=${normalizedCalendarDate}&staff=${encodeURIComponent(
     activeStaff
   )}`;
@@ -183,7 +185,11 @@ export default async function AdminBookings(props: {
     if (!b || b.client_id !== clientId) redirect(`${returnTo}&toast=error`);
     if (b.status === "cancelled") redirect(`${returnTo}&toast=cancelled`);
 
-    const { error } = await sb2.from("bookings").update({ status: "cancelled" }).eq("id", bookingId).eq("client_id", clientId);
+    const { error } = await sb2
+      .from("bookings")
+      .update({ status: "cancelled" })
+      .eq("id", bookingId)
+      .eq("client_id", clientId);
 
     if (error) redirect(`${returnTo}&toast=error`);
 
@@ -236,9 +242,8 @@ export default async function AdminBookings(props: {
 
   // ---------------- CALENDAR VIEW ----------------
   if (activeView === "calendar") {
-    // Initial events (first load only). After that: BookingsCalendar fetches via API route.
     const center = DateTime.fromISO(normalizedCalendarDate, { zone: tz }).startOf("day");
-    const rangeStart = activeMode === "day" ? center : center; // already Monday when week
+    const rangeStart = center;
     const rangeEnd = activeMode === "day" ? rangeStart.plus({ days: 1 }) : rangeStart.plus({ days: 7 });
 
     const fromIso = rangeStart.toUTC().toISO()!;
@@ -332,276 +337,290 @@ export default async function AdminBookings(props: {
               confirmAction={confirmBooking}
               cancelAction={cancelBooking}
             />
-
           </div>
         </div>
       </main>
     );
   }
 
- // ---------------- TABLE VIEW ----------------
-const nowIso = DateTime.now().setZone(tz).toUTC().toISO()!;
+  // ---------------- TABLE VIEW ----------------
+  const nowIso = DateTime.now().setZone(tz).toUTC().toISO()!;
 
-let q = sb
-  .from("bookings")
-  .select(
-    "id, client_id, staff_id, service_id, start_at, end_at, status, customer_name, customer_phone, customer_email, customer_note, created_at, service:services(name), staff:staff(name)"
-  )
-  .eq("client_id", clientId);
+  function isPastUnaccepted(b: BookingRow) {
+    if (b.status !== "pending") return false;
+    const startUtc = DateTime.fromISO(b.start_at).toUTC();
+    const nowUtc = DateTime.fromISO(nowIso).toUTC();
+    return startUtc < nowUtc;
+  }
 
-// STAFF filter for table view
-if (activeStaff !== "all") {
-  q = q.eq("staff_id", activeStaff);
-}
+  function isPast(b: BookingRow) {
+    const startUtc = DateTime.fromISO(b.start_at).toUTC();
+    const nowUtc = DateTime.fromISO(nowIso).toUTC();
+    return startUtc < nowUtc;
+  }
 
-if (filter === "pending") {
-  q = q.eq("status", "pending").order("start_at", { ascending: true });
-} else if (filter === "upcoming") {
-  q = q.eq("status", "confirmed").gte("start_at", nowIso).order("start_at", { ascending: true });
-} else if (filter === "past") {
-  q = q.eq("status", "confirmed").lt("start_at", nowIso).order("start_at", { ascending: false });
-} else if (filter === "cancelled") {
-  q = q.eq("status", "cancelled").order("start_at", { ascending: false });
-} else {
-  // all
-  q = q.order("start_at", { ascending: false });
-}
+  function statusLabel(b: BookingRow) {
+    if (isPastUnaccepted(b)) return "неприета";
+    if (b.status === "pending") return "чакаща";
+    if (b.status === "confirmed") return "потвърдена";
+    if (b.status === "cancelled") return "отказана";
+    return String(b.status || "—");
+  }
 
-const { data: bookings, error: bookingsErr } = await q.returns<BookingRow[]>();
-const list = bookings || [];
+  let q = sb
+    .from("bookings")
+    .select(
+      "id, client_id, staff_id, service_id, start_at, end_at, status, customer_name, customer_phone, customer_email, customer_note, created_at, service:services(name), staff:staff(name)"
+    )
+    .eq("client_id", clientId);
 
-return (
-  <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
-    <div className="max-w-6xl mx-auto space-y-6">
-      <AdminTopNav slug={slug} businessName={client.business_name} keyParam={key} active="bookings" />
-      <AdminToast toast={toast} />
+  if (activeStaff !== "all") q = q.eq("staff_id", activeStaff);
 
-      <div className="bg-white p-6 rounded shadow space-y-4">
-        <div className="bookings-headbar">
-          <div className="left">
-            <div className="title">Резервации</div>
-            <div className="subtitle">Преглед и управление на резервации.</div>
-          </div>
+  if (filter === "pending") {
+    q = q.eq("status", "pending").gte("end_at", nowIso).order("start_at", { ascending: true });
+  } else if (filter === "upcoming") {
+    q = q.eq("status", "confirmed").gte("start_at", nowIso).order("start_at", { ascending: true });
+  } else if (filter === "past") {
+    q = q.in("status", ["confirmed", "pending"]).lt("start_at", nowIso).order("start_at", { ascending: false });
+  } else if (filter === "cancelled") {
+    q = q.eq("status", "cancelled").order("start_at", { ascending: false });
+  } else {
+    q = q.order("start_at", { ascending: false });
+  }
 
-          <BookingsPrimaryNav tableHref={tableHref} calendarHref={calendarHref} activeView="table" />
-        </div>
+  const { data: bookings, error: bookingsErr } = await q.returns<BookingRow[]>();
+  const list = bookings || [];
 
-        <BookingsTableControls
-          slug={slug}
-          keyParam={key}
-          activeStatus={filter}
-          staff={activeStaff}
-          staffOptions={staffOptions}
-        />
+  return (
+    <main className="p-8 bg-gray-50 min-h-screen text-gray-900">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <AdminTopNav slug={slug} businessName={client.business_name} keyParam={key} active="bookings" />
+        <AdminToast toast={toast} />
 
-        {bookingsErr ? <div className="bg-red-100 text-red-800 p-3 rounded">Грешка при зареждане.</div> : null}
-
-        {list.length === 0 ? (
-          <div className="text-gray-700">
-            Няма резервации за този филтър. Пробвай{" "}
-            <a className="underline" href={tableHref.replace(`status=${encodeURIComponent(filter)}`, "status=all")}>
-              Всички
-            </a>
-            .
-          </div>
-        ) : (
-          <>
-            {/* Mobile cards */}
-            <div className="bookings-table-mobile">
-              {list.map((b) => {
-                const when = fmtDT(b.start_at, tz);
-                const serviceName = b.service?.name || "—";
-                const statusTxt = (b.status || "").toString();
-
-                return (
-                  <div key={b.id} className="bookings-card">
-                    <div className="bookings-card-top">
-                      <div className="bookings-card-when">{when}</div>
-                      <div className={`bookings-chip bookings-chip--${statusTxt}`}>{statusTxt}</div>
-                    </div>
-
-                    <div className="bookings-card-title">{serviceName}</div>
-
-                    {activeStaff === "all" ? (
-                      <div className="bookings-card-sub">Специалист: {b.staff?.name || "—"}</div>
-                    ) : null}
-
-                    <div className="bookings-card-sub">{b.customer_name}</div>
-                    <div className="bookings-card-sub">{b.customer_phone}</div>
-                    <div className="bookings-card-sub">{b.customer_email}</div>
-
-                    {b.customer_note ? (
-                      <div className="bookings-card-note">
-                        <span>Бележка:</span> {b.customer_note}
-                      </div>
-                    ) : null}
-
-                    <div className="bookings-card-actions">
-                      {b.status === "pending" ? (
-                        <>
-                          <form action={confirmBooking}>
-                            <input type="hidden" name="booking_id" value={b.id} />
-                            <input type="hidden" name="return_to" value={returnToBase} />
-                            <button
-                              type="submit"
-                              className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90"
-                            >
-                              Confirm
-                            </button>
-                          </form>
-
-                          <form action={cancelBooking}>
-                            <input type="hidden" name="booking_id" value={b.id} />
-                            <input type="hidden" name="return_to" value={returnToBase} />
-                            <button
-                              type="submit"
-                              className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
-                            >
-                              Cancel
-                            </button>
-                          </form>
-                        </>
-                      ) : b.status !== "cancelled" ? (
-                        <form action={cancelBooking}>
-                          <input type="hidden" name="booking_id" value={b.id} />
-                          <input type="hidden" name="return_to" value={returnToBase} />
-                          <button
-                            type="submit"
-                            className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
-                          >
-                            Cancel
-                          </button>
-                        </form>
-                      ) : (
-                        <span className="text-gray-500 text-sm">Отказана.</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="bg-white p-6 rounded shadow space-y-4">
+          <div className="bookings-headbar">
+            <div className="left">
+              <div className="title">Резервации</div>
+              <div className="subtitle">Преглед и управление на резервации.</div>
             </div>
 
-            {/* Desktop table */}
-            <div className="bookings-table-desktop overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-600 border-b">
-                    <th className="py-2 pr-3">Кога</th>
-                    <th className="py-2 pr-3">Услуга</th>
+            <BookingsPrimaryNav tableHref={tableHref} calendarHref={calendarHref} activeView="table" />
+          </div>
 
-                    {activeStaff === "all" ? <th className="py-2 pr-3">Специалист</th> : null}
+          <BookingsTableControls slug={slug} keyParam={key} activeStatus={filter} staff={activeStaff} staffOptions={staffOptions} />
 
-                    <th className="py-2 pr-3">Клиент</th>
-                    <th className="py-2 pr-3">Контакти</th>
-                    <th className="py-2 pr-3">Статус</th>
-                    <th className="py-2 pr-3">Действия</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((b) => {
-                    const isCancelled = b.status === "cancelled";
-                    const isPending = b.status === "pending";
-                    const when = fmtDT(b.start_at, tz);
-                    const serviceName = b.service?.name || "—";
+          {bookingsErr ? <div className="bg-red-100 text-red-800 p-3 rounded">Грешка при зареждане.</div> : null}
 
-                    return (
-                      <tr key={b.id} className="border-b align-top">
-                        <td className="py-3 pr-3 whitespace-nowrap">{when}</td>
+          {list.length === 0 ? (
+            <div className="text-gray-700">Няма резервации за този филтър.</div>
+          ) : (
+            <>
+              {/* Mobile cards */}
+              <div className="bookings-table-mobile">
+                {list.map((b) => {
+                  const when = fmtDT(b.start_at, tz);
+                  const serviceName = b.service?.name || "—";
+                  const unaccepted = isPastUnaccepted(b);
+                  const label = statusLabel(b);
 
-                        <td className="py-3 pr-3">
-                          <div className="font-medium">{serviceName}</div>
-                          {b.customer_note ? (
-                            <div className="text-gray-600 mt-1">
-                              <span className="font-medium">Бележка:</span> {b.customer_note}
-                            </div>
-                          ) : null}
-                        </td>
+                  return (
+                    <div key={b.id} className="bookings-card">
+                      <div className="bookings-card-top">
+                        <div className="bookings-card-when">{when}</div>
+                        <div className={`bookings-chip bookings-chip--${String(b.status || "").toLowerCase()}`}>{label}</div>
+                      </div>
 
-                        {activeStaff === "all" ? (
-                          <td className="py-3 pr-3">
-                            <div className="font-medium">{b.staff?.name || "—"}</div>
-                          </td>
-                        ) : null}
+                      <div className="bookings-card-title">{serviceName}</div>
 
-                        <td className="py-3 pr-3">{b.customer_name}</td>
+                      {activeStaff === "all" ? <div className="bookings-card-sub">Специалист: {b.staff?.name || "—"}</div> : null}
 
-                        <td className="py-3 pr-3">
-                          <div>{b.customer_phone}</div>
-                          <div className="text-gray-600">{b.customer_email}</div>
-                        </td>
+                      <div className="bookings-card-sub">{b.customer_name}</div>
+                      <div className="bookings-card-sub">{b.customer_phone}</div>
+                      <div className="bookings-card-sub">{b.customer_email}</div>
 
-                        <td className="py-3 pr-3">
-                          <span
-                            className={[
-                              "inline-block px-2 py-1 rounded text-xs border",
-                              isCancelled
-                                ? "bg-red-50 text-red-700 border-red-200"
-                                : isPending
-                                ? "bg-yellow-50 text-yellow-800 border-yellow-200"
-                                : "bg-green-50 text-green-700 border-green-200",
-                            ].join(" ")}
-                          >
-                            {b.status}
-                          </span>
-                        </td>
+                      {b.customer_note ? (
+                        <div className="bookings-card-note">
+                          <span>Бележка:</span> {b.customer_note}
+                        </div>
+                      ) : null}
 
-                        <td className="py-3 pr-3">
-                          {isCancelled ? (
-                            <span className="text-gray-500">—</span>
-                          ) : isPending ? (
-                            <div className="flex gap-2 flex-wrap">
-                              <form action={confirmBooking}>
-                                <input type="hidden" name="booking_id" value={b.id} />
-                                <input type="hidden" name="return_to" value={returnToBase} />
-                                <button
-                                  type="submit"
-                                  className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90"
-                                >
-                                  Confirm
-                                </button>
-                              </form>
+                      <div className="bookings-card-actions">
+                        {isPast(b) ? null : (
+                          <>
+                            {!unaccepted && b.status !== "cancelled" ? (
+                              <BookingsRescheduleButton
+                                slug={slug}
+                                keyParam={key}
+                                bookingId={b.id}
+                                startAtIso={b.start_at}
+                                status={b.status}
+                              />
+                            ) : null}
 
+                            {b.status === "pending" && !unaccepted ? (
+                              <>
+                                <form action={confirmBooking}>
+                                  <input type="hidden" name="booking_id" value={b.id} />
+                                  <input type="hidden" name="return_to" value={returnToBase} />
+                                  <button type="submit" className="px-3 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
+                                    Confirm
+                                  </button>
+                                </form>
+
+                                <form action={cancelBooking}>
+                                  <input type="hidden" name="booking_id" value={b.id} />
+                                  <input type="hidden" name="return_to" value={returnToBase} />
+                                  <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                                    Cancel
+                                  </button>
+                                </form>
+                              </>
+                            ) : b.status !== "cancelled" ? (
                               <form action={cancelBooking}>
                                 <input type="hidden" name="booking_id" value={b.id} />
                                 <input type="hidden" name="return_to" value={returnToBase} />
-                                <button
-                                  type="submit"
-                                  className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
-                                >
+                                <button type="submit" className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
                                   Cancel
                                 </button>
                               </form>
-                            </div>
-                          ) : (
-                            <form action={cancelBooking}>
-                              <input type="hidden" name="booking_id" value={b.id} />
-                              <input type="hidden" name="return_to" value={returnToBase} />
-                              <button
-                                type="submit"
-                                className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90"
-                              >
-                                Cancel
-                              </button>
-                            </form>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+                            ) : (
+                              <span className="text-gray-500 text-sm">Отказана.</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-        <div className="text-xs text-gray-500">
-          Cancel е soft: сменя <code>status</code> на <code>cancelled</code>, без да трие реда. Confirm сменя на{" "}
-          <code>confirmed</code>.
+              {/* Desktop table */}
+              <div className="bookings-table-desktop overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-600 border-b">
+                      <th className="py-2 pr-3">Кога</th>
+                      <th className="py-2 pr-3">Услуга</th>
+                      {activeStaff === "all" ? <th className="py-2 pr-3">Специалист</th> : null}
+                      <th className="py-2 pr-3">Клиент</th>
+                      <th className="py-2 pr-3">Контакти</th>
+                      <th className="py-2 pr-3">Статус</th>
+                      <th className="py-2 pr-3">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map((b) => {
+                      const isCancelled = b.status === "cancelled";
+                      const unaccepted = isPastUnaccepted(b);
+                      const when = fmtDT(b.start_at, tz);
+                      const serviceName = b.service?.name || "—";
+                      const label = statusLabel(b);
+
+                      return (
+                        <tr key={b.id} className="border-b align-top">
+                          <td className="py-3 pr-3 whitespace-nowrap">{when}</td>
+
+                          <td className="py-3 pr-3">
+                            <div className="font-medium">{serviceName}</div>
+                            {b.customer_note ? (
+                              <div className="text-gray-600 mt-1">
+                                <span className="font-medium">Бележка:</span> {b.customer_note}
+                              </div>
+                            ) : null}
+                          </td>
+
+                          {activeStaff === "all" ? (
+                            <td className="py-3 pr-3">
+                              <div className="font-medium">{b.staff?.name || "—"}</div>
+                            </td>
+                          ) : null}
+
+                          <td className="py-3 pr-3">{b.customer_name}</td>
+
+                          <td className="py-3 pr-3">
+                            <div>{b.customer_phone}</div>
+                            <div className="text-gray-600">{b.customer_email}</div>
+                          </td>
+
+                          <td className="py-3 pr-3">
+                            <span
+                              className={[
+                                "inline-block px-2 py-1 rounded text-xs border",
+                                isCancelled
+                                  ? "bg-red-50 text-red-700 border-red-200"
+                                  : unaccepted
+                                  ? "bg-gray-50 text-gray-700 border-gray-200"
+                                  : b.status === "pending"
+                                  ? "bg-yellow-50 text-yellow-800 border-yellow-200"
+                                  : "bg-green-50 text-green-700 border-green-200",
+                              ].join(" ")}
+                            >
+                              {label}
+                            </span>
+                          </td>
+
+                          <td className="py-3 pr-3">
+                            {isPast(b) ? (
+                              <span className="text-gray-400 text-sm">—</span>
+                            ) : isCancelled ? (
+                              <span className="text-gray-500 text-sm">—</span>
+                            ) : b.status === "pending" && !unaccepted ? (
+                              <div className="bookings-actions-row">
+                                <BookingsRescheduleButton
+                                  slug={slug}
+                                  keyParam={key}
+                                  bookingId={b.id}
+                                  startAtIso={b.start_at}
+                                  status={b.status}
+                                />
+
+                                <form action={confirmBooking}>
+                                  <input type="hidden" name="booking_id" value={b.id} />
+                                  <input type="hidden" name="return_to" value={returnToBase} />
+                                  <button className="px-3 py-2 rounded bg-green-600 text-white text-sm">Confirm</button>
+                                </form>
+
+                                <form action={cancelBooking}>
+                                  <input type="hidden" name="booking_id" value={b.id} />
+                                  <input type="hidden" name="return_to" value={returnToBase} />
+                                  <button className="px-3 py-2 rounded bg-red-600 text-white text-sm">Cancel</button>
+                                </form>
+                              </div>
+                            ) : b.status === "confirmed" ? (
+                              <div className="bookings-actions-row">
+                                <BookingsRescheduleButton
+                                  slug={slug}
+                                  keyParam={key}
+                                  bookingId={b.id}
+                                  startAtIso={b.start_at}
+                                  status={b.status}
+                                />
+
+                                <form action={cancelBooking}>
+                                  <input type="hidden" name="booking_id" value={b.id} />
+                                  <input type="hidden" name="return_to" value={returnToBase} />
+                                  <button className="px-3 py-2 rounded bg-red-600 text-white text-sm">Cancel</button>
+                                </form>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-sm">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          <div className="text-xs text-gray-500">
+            Чакащи показва само бъдещи заявки. Минали включва потвърдени + неприети (pending, но вече минали). Cancel е soft: сменя{" "}
+            <code>status</code> на <code>cancelled</code>.
+          </div>
         </div>
       </div>
-    </div>
-  </main>
-);
-
-
+    </main>
+  );
 }

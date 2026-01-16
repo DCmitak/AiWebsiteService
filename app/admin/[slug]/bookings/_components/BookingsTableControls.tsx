@@ -31,6 +31,9 @@ export default function BookingsTableControls({
     router.push(`/admin/${slug}/bookings?${sp.toString()}`);
   };
 
+  const goAll = () => go({ status: "all" });
+  const allActive = status === "all";
+
   return (
     <div className="bookings-controls">
       {/* Desktop */}
@@ -49,7 +52,8 @@ export default function BookingsTableControls({
         <button type="button" className={`btn ${status === "cancelled" ? "btn-active" : ""}`} onClick={() => go({ status: "cancelled" })}>
           Отказани
         </button>
-        <button type="button" className={`btn ${status === "all" ? "btn-active" : ""}`} onClick={() => go({ status: "all" })}>
+
+        <button type="button" className={`btn ${allActive ? "btn-active" : ""}`} onClick={goAll}>
           Всички
         </button>
 

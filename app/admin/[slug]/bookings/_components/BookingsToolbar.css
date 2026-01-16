@@ -1,5 +1,9 @@
 /* app/admin/[slug]/bookings/_components/BookingsToolbar.css */
 
+/* ===========================
+   Headbar
+   =========================== */
+
 .bookings-headbar {
   display: flex;
   align-items: flex-start;
@@ -25,7 +29,10 @@
   color: #6b7280;
 }
 
-/* Primary nav: Table/Calendar only */
+/* ===========================
+   Primary nav: Table/Calendar only
+   =========================== */
+
 .bookings-primary {
   display: inline-flex;
   align-items: center;
@@ -64,7 +71,10 @@
   color: #fff;
 }
 
-/* Controls row */
+/* ===========================
+   Controls row
+   =========================== */
+
 .bookings-controls {
   display: flex;
   align-items: center;
@@ -127,6 +137,11 @@
   gap: 8px;
 }
 
+.bookings-controls .spacer {
+  flex: 1;
+}
+
+/* IMPORTANT: use ONLY these (no global .desktop-only/.mobile-only overrides) */
 .bookings-controls .mobile-only {
   display: none;
 }
@@ -135,7 +150,10 @@
   display: inline-flex;
 }
 
-/* Desktop table vs mobile cards */
+/* ===========================
+   Desktop table vs mobile cards
+   =========================== */
+
 .bookings-table-mobile {
   display: none;
 }
@@ -149,7 +167,10 @@
   }
 }
 
-/* Mobile layout */
+/* ===========================
+   Mobile layout
+   =========================== */
+
 @media (max-width: 640px) {
   .bookings-headbar {
     align-items: stretch;
@@ -166,6 +187,7 @@
 
   .bookings-controls {
     justify-content: flex-start;
+    width: 100%;
   }
 
   .bookings-controls .group {
@@ -181,13 +203,134 @@
     display: none;
   }
 
+  /* Mobile controls: keep them clean and aligned */
   .bookings-controls .mobile-only {
-    display: inline-flex;
+    display: grid;
     width: 100%;
+    gap: 10px;
+  }
+
+  .bookings-controls .mobile-only .row {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    align-items: center;
+    gap: 10px;
   }
 }
 
-/* Mobile table cards */
+/* ===========================
+   Mobile cards for table view (matches your JSX classes)
+   =========================== */
+
+.bookings-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.bookings-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bookings-card-when {
+  font-weight: 800;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.bookings-card-title {
+  font-weight: 900;
+  color: #111827;
+  line-height: 1.15;
+}
+
+.bookings-card-sub {
+  font-size: 13px;
+  color: #111827;
+}
+
+.bookings-card-note {
+  font-size: 13px;
+  color: #111827;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.bookings-card-note span {
+  font-weight: 900;
+}
+
+.bookings-card-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+/* status chip */
+.bookings-chip {
+  font-size: 12px;
+  font-weight: 900;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.bookings-chip--confirmed {
+  background: #ecfdf5;
+  border-color: #34d399;
+  color: #064e3b;
+}
+
+.bookings-chip--pending {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.bookings-chip--cancelled {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #7f1d1d;
+  text-decoration: line-through;
+}
+
+/* ===========================
+   Desktop table actions: keep buttons on one line
+   =========================== */
+
+.bookings-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.bookings-actions-row > * {
+  flex: 0 0 auto;
+}
+
+.bookings-actions-row button {
+  line-height: 1;
+}
+
+/* ===========================
+   Legacy bt-* styles (kept as-is, harmless if unused)
+   =========================== */
+
 .bt-cards {
   display: grid;
   gap: 12px;
@@ -318,118 +461,3 @@
 .muted {
   color: #6b7280;
 }
-
-
-
-
-
-
-
-
-
-
-
-/* --- Mobile cards for table view (matches your JSX classes) --- */
-.bookings-cards {
-  display: grid;
-  gap: 12px;
-}
-
-.bookings-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  background: #fff;
-  padding: 12px;
-  display: grid;
-  gap: 8px;
-}
-
-.bookings-card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.bookings-card-when {
-  font-weight: 800;
-  color: #111827;
-  line-height: 1.2;
-}
-
-.bookings-card-title {
-  font-weight: 900;
-  color: #111827;
-  line-height: 1.15;
-}
-
-.bookings-card-sub {
-  font-size: 13px;
-  color: #111827;
-}
-
-.bookings-card-note {
-  font-size: 13px;
-  color: #111827;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 10px;
-}
-
-.bookings-card-note span {
-  font-weight: 900;
-}
-
-.bookings-card-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-
-/* status chip */
-.bookings-chip {
-  font-size: 12px;
-  font-weight: 900;
-  border-radius: 999px;
-  padding: 4px 10px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
-  color: #111827;
-  white-space: nowrap;
-}
-
-.bookings-chip--confirmed {
-  background: #ecfdf5;
-  border-color: #34d399;
-  color: #064e3b;
-}
-
-.bookings-chip--pending {
-  background: #fffbeb;
-  border-color: #f59e0b;
-  color: #92400e;
-}
-
-.bookings-chip--cancelled {
-  background: #fef2f2;
-  border-color: #ef4444;
-  color: #7f1d1d;
-  text-decoration: line-through;
-}
-
-
-
-
-.desktop-only { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.mobile-only { display: none; }
-
-@media (max-width: 768px) {
-  .desktop-only { display: none; }
-  .mobile-only { display: grid; gap: 10px; }
-  .mobile-only .row { display: grid; gap: 6px; }
-}
-
-.bookings-controls .spacer { flex: 1; }

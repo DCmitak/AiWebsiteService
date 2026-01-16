@@ -438,11 +438,7 @@ export default async function AdminSettings(props: {
         ) : null}
 
         {/* MAIN SETTINGS FORM – включва и логото */}
-        <form
-          action={save}
-          className="space-y-4"
-          encType="multipart/form-data"
-        >
+          <form action={save} className="space-y-4">
           <input type="hidden" name="key" value={key} />
           <input type="hidden" name="client_id" value={client.id} />
           <input type="hidden" name="old_logo_url" value={s.logo_url || ""} />

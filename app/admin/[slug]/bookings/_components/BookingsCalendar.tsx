@@ -125,6 +125,13 @@ export default function BookingsCalendar({
 
   const [open, setOpen] = useState<CalendarEvent["extendedProps"]["booking"] | null>(null);
 
+  // Edit state (molevche)
+  const [editing, setEditing] = useState(false);
+  const [editDate, setEditDate] = useState<string>("");
+  const [editTime, setEditTime] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   // Local state drives the calendar (no SSR reload)
   const [modeState, setModeState] = useState<"week" | "day">(mode);
   const [dateState, setDateState] = useState<string>(date);
@@ -137,7 +144,24 @@ export default function BookingsCalendar({
   const calRef = useRef<FullCalendar | null>(null);
   const syncingRef = useRef(false);
 
-  // FullCalendar header (required, otherwise TS complains if referenced)
+  function isPastUnacceptedBooking(b?: CalendarEvent["extendedProps"]["booking"] | null) {
+    if (!b) return false;
+    if ((b.status || "").toString().toLowerCase() !== "pending") return false;
+    const startUtc = DateTime.fromISO(b.start_at).toUTC();
+    return startUtc < DateTime.now().toUTC();
+  }
+
+  function statusLabel(status: BookingStatus, booking?: CalendarEvent["extendedProps"]["booking"] | null) {
+    const s = (status || "").toString().toLowerCase();
+
+    if (booking && isPastUnacceptedBooking(booking)) return "неприета";
+    if (s === "pending") return "чакаща";
+    if (s === "confirmed") return "потвърдена";
+    if (s === "cancelled") return "отказана";
+    return s || "—";
+  }
+
+  // FullCalendar header
   const headerToolbar = useMemo(
     () => ({
       left: "prev,next today",
@@ -156,7 +180,7 @@ export default function BookingsCalendar({
   const viewName = modeState === "day" ? "timeGridDay" : "timeGridWeek";
   const rangeTitle = useMemo(() => formatRangeTitle(modeState, normDate, tz), [modeState, normDate, tz]);
 
-  // Keep URL in sync (no navigation flicker)
+  // Keep URL in sync
   useEffect(() => {
     const url = buildCalendarUrl({
       slug,
@@ -169,46 +193,46 @@ export default function BookingsCalendar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modeState, normDate, staffState]);
 
-  // Fetch events when mode/date/staff changes
+  // Fetch events
+  async function fetchEvents(signal?: AbortSignal) {
+    setLoading(true);
+    setLoadError(null);
+
+    try {
+      const sp = new URLSearchParams();
+      sp.set("key", keyParam);
+      sp.set("mode", modeState);
+      sp.set("date", normDate);
+      sp.set("staff", staffState);
+
+      const res = await fetch(`/api/admin/${slug}/bookings/events?${sp.toString()}`, {
+        method: "GET",
+        signal,
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      const nextEvents: CalendarEvent[] = Array.isArray(json?.events) ? json.events : [];
+      setEvents(nextEvents);
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+      setLoadError("Грешка при зареждане на календара.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     const ac = new AbortController();
-
-    async function run() {
-      setLoading(true);
-      setLoadError(null);
-
-      try {
-        const sp = new URLSearchParams();
-        sp.set("key", keyParam);
-        sp.set("mode", modeState);
-        sp.set("date", normDate);
-        sp.set("staff", staffState);
-
-        const res = await fetch(`/api/admin/${slug}/bookings/events?${sp.toString()}`, {
-          method: "GET",
-          signal: ac.signal,
-          headers: { accept: "application/json" },
-          cache: "no-store",
-        });
-
-        if (!res.ok) {
-          const txt = await res.text();
-          throw new Error(txt || `HTTP ${res.status}`);
-        }
-
-        const json = await res.json();
-        const nextEvents: CalendarEvent[] = Array.isArray(json?.events) ? json.events : [];
-        setEvents(nextEvents);
-      } catch (e: any) {
-        if (e?.name === "AbortError") return;
-        setLoadError("Грешка при зареждане на календара.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    run();
+    fetchEvents(ac.signal);
     return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, keyParam, modeState, normDate, staffState]);
 
   // URL/state -> FullCalendar sync (desktop)
@@ -256,6 +280,38 @@ export default function BookingsCalendar({
     if (props?.type === "booking" && props.booking) setOpen(props.booking);
   }
 
+  // Initialize edit fields when modal opens
+  useEffect(() => {
+    if (!open) return;
+    setEditing(false);
+    setSaveError(null);
+    setSaving(false);
+
+    const local = DateTime.fromISO(open.start_at, { zone: tz });
+    setEditDate(local.toISODate()!);
+    setEditTime(local.toFormat("HH:mm"));
+  }, [open, tz]);
+
+  async function rescheduleBooking(bookingId: string, newStartIso: string) {
+    const sp = new URLSearchParams();
+    sp.set("key", keyParam);
+
+    const res = await fetch(`/api/admin/${slug}/bookings/reschedule?${sp.toString()}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ bookingId, newStartIso }),
+      cache: "no-store",
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      return { ok: false as const, reason: json?.reason || "server_error" };
+    }
+
+    return { ok: true as const };
+  }
+
   function renderEventContent(info: any) {
     const props = info?.event?.extendedProps;
     if (props?.type === "timeoff") return null;
@@ -272,6 +328,7 @@ export default function BookingsCalendar({
 
     const s = fmtHM(b.start_at, tz);
     const e = fmtHM(b.end_at, tz);
+    const label = statusLabel(b.status, b);
 
     return (
       <div className="fc-ev">
@@ -280,6 +337,7 @@ export default function BookingsCalendar({
         </div>
         <div className="fc-ev-title">
           {b.service_name} • {b.customer_name}
+          {label === "неприета" ? <span className="fc-ev-badge"> • неприета</span> : null}
         </div>
       </div>
     );
@@ -337,6 +395,174 @@ export default function BookingsCalendar({
     },
   };
 
+  const Modal = open ? (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(null)} />
+      <div className="relative z-10 w-full max-w-lg rounded-lg bg-white shadow-lg">
+        <div className="p-5 border-b flex items-start justify-between gap-4">
+          <div>
+            <div className="text-lg font-semibold">{open.service_name}</div>
+            <div className="text-sm text-gray-600">
+              {open.staff_name ? <>Специалист: {open.staff_name} • </> : null}
+              {fmtHM(open.start_at, tz)} – {fmtHM(open.end_at, tz)} • Статус:{" "}
+              <span className="font-medium">{statusLabel(open.status, open)}</span>
+            </div>
+            <div className="text-xs text-gray-400 mt-1">ID: {open.id}</div>
+          </div>
+          <button className="text-sm text-gray-600 hover:text-black" onClick={() => setOpen(null)}>
+            Затвори
+          </button>
+        </div>
+
+        <div className="p-5 space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-gray-500">Клиент</div>
+              <div className="font-medium">{open.customer_name}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Контакт</div>
+              <div>{open.customer_phone}</div>
+              <div className="text-gray-600">{open.customer_email}</div>
+            </div>
+          </div>
+
+          {open.customer_note ? (
+            <div className="rounded border bg-gray-50 p-3">
+              <div className="text-gray-500">Бележка</div>
+              <div className="mt-1 whitespace-pre-wrap">{open.customer_note}</div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="p-5 border-t">
+          {!editing ? (
+            <div className="flex gap-2 justify-end flex-wrap">
+              <button
+                type="button"
+                className="px-4 py-2 rounded border text-sm hover:bg-gray-50"
+                onClick={() => {
+                  setEditing(true);
+                  setSaveError(null);
+                }}
+              >
+                ✎ Промени час
+              </button>
+
+              {open.status === "pending" && !isPastUnacceptedBooking(open) ? (
+                <form action={confirmAction}>
+                  <input type="hidden" name="booking_id" value={open.id} />
+                  <input type="hidden" name="return_to" value={returnToBase} />
+                  <button className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
+                    Confirm
+                  </button>
+                </form>
+              ) : null}
+
+              {open.status !== "cancelled" ? (
+                <form action={cancelAction}>
+                  <input type="hidden" name="booking_id" value={open.id} />
+                  <input type="hidden" name="return_to" value={returnToBase} />
+                  <button className="px-4 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <span className="text-gray-500 text-sm">Вече е отказана.</span>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm font-medium">Промени час</div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-sm">
+                  <div className="text-gray-600 mb-1">Дата</div>
+                  <input
+                    type="date"
+                    className="w-full border rounded px-3 py-2"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    disabled={saving}
+                  />
+                </label>
+
+                <label className="text-sm">
+                  <div className="text-gray-600 mb-1">Час</div>
+                  <input
+                    type="time"
+                    className="w-full border rounded px-3 py-2"
+                    value={editTime}
+                    onChange={(e) => setEditTime(e.target.value)}
+                    disabled={saving}
+                  />
+                </label>
+              </div>
+
+              {saveError ? <div className="text-sm text-red-600">{saveError}</div> : null}
+
+              <div className="flex justify-end gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded border text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setEditing(false);
+                    setSaveError(null);
+                  }}
+                  disabled={saving}
+                >
+                  Отказ
+                </button>
+
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded bg-gray-900 text-white text-sm hover:opacity-90 disabled:opacity-50"
+                  disabled={saving || !editDate || !editTime}
+                  onClick={async () => {
+                    if (!open) return;
+
+                    setSaving(true);
+                    setSaveError(null);
+
+                    try {
+                      // chosen date/time in salon TZ -> UTC ISO
+                      const local = DateTime.fromISO(`${editDate}T${editTime}`, { zone: tz });
+                      if (!local.isValid) {
+                        setSaveError("Невалидна дата/час.");
+                        return;
+                      }
+
+                      const newStartIso = local.toUTC().toISO()!;
+                      const r = await rescheduleBooking(open.id, newStartIso);
+
+                      if (!r.ok) {
+                        setSaveError(r.reason === "slot_taken" ? "Този час е зает. Избери друг." : "Грешка при запис.");
+                        return;
+                      }
+
+                      // success
+                      setEditing(false);
+                      setOpen(null);
+                      await fetchEvents();
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                >
+                  Запази
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-500">
+                Съвет: използвай „Предстоящи“/„Минали“ в таблицата за бързо намиране. Тук променяш само точния час.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (isMobile) {
     return (
       <div className="bc-mobile">
@@ -369,9 +595,15 @@ export default function BookingsCalendar({
                 <div className="bc-day-list">
                   {day.items.map((ev) => {
                     const b = ev.extendedProps?.booking;
-                    const status = (ev.extendedProps?.status || "").toString().toLowerCase();
+
+                    const rawStatus = (ev.extendedProps?.status || "").toString().toLowerCase();
+                    const unaccepted = b ? isPastUnacceptedBooking(b) : false;
+
+                    const label = b ? statusLabel(b.status, b) : statusLabel(rawStatus, null);
+
                     const s = b ? fmtHM(b.start_at, tz) : fmtHM(ev.start, tz);
                     const e = b ? fmtHM(b.end_at, tz) : fmtHM(ev.end, tz);
+
                     const title = b ? `${b.service_name}` : ev.title;
                     const sub = b ? `${b.customer_name}` : "";
 
@@ -381,9 +613,10 @@ export default function BookingsCalendar({
                         type="button"
                         className={[
                           "bc-card",
-                          status === "confirmed" ? "is-confirmed" : "",
-                          status === "pending" ? "is-pending" : "",
-                          status === "cancelled" ? "is-cancelled" : "",
+                          rawStatus === "confirmed" ? "is-confirmed" : "",
+                          rawStatus === "pending" ? "is-pending" : "",
+                          rawStatus === "cancelled" ? "is-cancelled" : "",
+                          unaccepted ? "is-unaccepted" : "",
                         ].join(" ")}
                         onClick={() => {
                           const booking = ev.extendedProps?.booking;
@@ -395,7 +628,7 @@ export default function BookingsCalendar({
                         </div>
                         <div className="bc-card-title">{title}</div>
                         {sub ? <div className="bc-card-sub">{sub}</div> : null}
-                        <div className="bc-card-status">{status || "—"}</div>
+                        <div className="bc-card-status">{label || "—"}</div>
                       </button>
                     );
                   })}
@@ -405,71 +638,7 @@ export default function BookingsCalendar({
           </div>
         )}
 
-        {open ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(null)} />
-            <div className="relative z-10 w-full max-w-lg rounded-lg bg-white shadow-lg">
-              <div className="p-5 border-b flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-lg font-semibold">{open.service_name}</div>
-                  <div className="text-sm text-gray-600">
-                    {open.staff_name ? <>Специалист: {open.staff_name} • </> : null}
-                    {fmtHM(open.start_at, tz)} – {fmtHM(open.end_at, tz)} • Статус:{" "}
-                    <span className="font-medium">{open.status}</span>
-                  </div>
-                </div>
-                <button className="text-sm text-gray-600 hover:text-black" onClick={() => setOpen(null)}>
-                  Затвори
-                </button>
-              </div>
-
-              <div className="p-5 space-y-3 text-sm">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-gray-500">Клиент</div>
-                    <div className="font-medium">{open.customer_name}</div>
-                  </div>
-                  <div>
-                    <div className="text-gray-500">Контакт</div>
-                    <div>{open.customer_phone}</div>
-                    <div className="text-gray-600">{open.customer_email}</div>
-                  </div>
-                </div>
-
-                {open.customer_note ? (
-                  <div className="rounded border bg-gray-50 p-3">
-                    <div className="text-gray-500">Бележка</div>
-                    <div className="mt-1 whitespace-pre-wrap">{open.customer_note}</div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="p-5 border-t flex gap-2 justify-end flex-wrap">
-                {open.status === "pending" ? (
-                  <form action={confirmAction}>
-                    <input type="hidden" name="booking_id" value={open.id} />
-                    <input type="hidden" name="return_to" value={returnToBase} />
-                    <button className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
-                      Confirm
-                    </button>
-                  </form>
-                ) : null}
-
-                {open.status !== "cancelled" ? (
-                  <form action={cancelAction}>
-                    <input type="hidden" name="booking_id" value={open.id} />
-                    <input type="hidden" name="return_to" value={returnToBase} />
-                    <button className="px-4 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
-                      Cancel
-                    </button>
-                  </form>
-                ) : (
-                  <span className="text-gray-500 text-sm">Вече е отказана.</span>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {Modal}
       </div>
     );
   }
@@ -513,81 +682,21 @@ export default function BookingsCalendar({
           eventShortHeight={56}
           eventClassNames={(info) => {
             const t = info.event.extendedProps?.type;
-            const s = info.event.extendedProps?.status;
+            const s = (info.event.extendedProps?.status || "").toString().toLowerCase();
+            const b = info.event.extendedProps?.booking;
+
             if (t === "timeoff") return ["fc-timeoff"];
+            if (s === "pending" && b && isPastUnacceptedBooking(b)) return ["fc-pending", "fc-unaccepted"];
             if (s === "pending") return ["fc-pending"];
             if (s === "confirmed") return ["fc-confirmed"];
             if (s === "cancelled") return ["fc-cancelled"];
             return ["fc-booking"];
           }}
+          editable={false} // IMPORTANT: disable drag & drop (safer UX)
         />
       </div>
 
-      {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(null)} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-white shadow-lg">
-            <div className="p-5 border-b flex items-start justify-between gap-4">
-              <div>
-                <div className="text-lg font-semibold">{open.service_name}</div>
-                <div className="text-sm text-gray-600">
-                  {open.staff_name ? <>Специалист: {open.staff_name} • </> : null}
-                  {fmtHM(open.start_at, tz)} – {fmtHM(open.end_at, tz)} • Статус:{" "}
-                  <span className="font-medium">{open.status}</span>
-                </div>
-              </div>
-              <button className="text-sm text-gray-600 hover:text-black" onClick={() => setOpen(null)}>
-                Затвори
-              </button>
-            </div>
-
-            <div className="p-5 space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-gray-500">Клиент</div>
-                  <div className="font-medium">{open.customer_name}</div>
-                </div>
-                <div>
-                  <div className="text-gray-500">Контакт</div>
-                  <div>{open.customer_phone}</div>
-                  <div className="text-gray-600">{open.customer_email}</div>
-                </div>
-              </div>
-
-              {open.customer_note ? (
-                <div className="rounded border bg-gray-50 p-3">
-                  <div className="text-gray-500">Бележка</div>
-                  <div className="mt-1 whitespace-pre-wrap">{open.customer_note}</div>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="p-5 border-t flex gap-2 justify-end flex-wrap">
-              {open.status === "pending" ? (
-                <form action={confirmAction}>
-                  <input type="hidden" name="booking_id" value={open.id} />
-                  <input type="hidden" name="return_to" value={returnToBase} />
-                  <button className="px-4 py-2 rounded bg-green-600 text-white text-sm hover:opacity-90">
-                    Confirm
-                  </button>
-                </form>
-              ) : null}
-
-              {open.status !== "cancelled" ? (
-                <form action={cancelAction}>
-                  <input type="hidden" name="booking_id" value={open.id} />
-                  <input type="hidden" name="return_to" value={returnToBase} />
-                  <button className="px-4 py-2 rounded bg-red-600 text-white text-sm hover:opacity-90">
-                    Cancel
-                  </button>
-                </form>
-              ) : (
-                <span className="text-gray-500 text-sm">Вече е отказана.</span>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {Modal}
     </div>
   );
 }
