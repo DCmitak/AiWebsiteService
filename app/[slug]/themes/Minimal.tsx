@@ -1,10 +1,13 @@
 // app/[slug]/themes/Minimal.tsx
 import type { PublicPayload, Review, Service, GalleryImage } from "../types";
-import ReviewsCarousel from "./ReviewsCarousel";
+import ReviewsCarousel from "./components/ReviewsCarousel";
 import ServicesTabs from "../ServicesTabs";
 import ServicesTabsV2 from "../ServicesTabsV2";
-import WorkCarousel from "./WorkCarousel";
-import ThemeButton from "./ThemeButton";
+import WorkCarousel from "./components/WorkCarousel";
+import ThemeButton from "./components/ThemeButton";
+
+import FaIcon from "./components/FaIcon";
+import VenueGallery from "./components/VenueGallery";
 
 export default function MinimalTheme({
   client,
@@ -13,21 +16,30 @@ export default function MinimalTheme({
   gallery,
   reviews,
 }: PublicPayload) {
+  const sAny = (settings || {}) as any;
+
   const primary = settings?.primary_color || "#B2773D";
   const pricingLayout = (settings?.pricing_layout || "v1").toLowerCase();
 
-  const bg = "#F3D8D4";
-  const surface = "#F7EFEE";
-  const ink = "#1F2430";
+  // Theme colors (from settings)
+  const bg = sAny.theme_bg || "#F3D8D4";
+  const surface = sAny.theme_surface || "#F7EFEE";
+  const ink = sAny.theme_ink || "#1F2430";
 
-  const booking = `/${client.slug}/book`;
+  // CTA / hero buttons
+  const booking = "#pricing";
+  const showHeaderCta = sAny.show_header_cta !== false;
+  const showHeroCta = sAny.show_hero_cta !== false;
+  const showHeroCall = sAny.show_hero_call !== false;
+  const ctaLabel = (sAny.cta_label || "").trim() || "Запази час";
+  const callLabel = (sAny.call_label || "").trim() || "Обади се";
 
+  // contact
   const phone = (settings?.phone || "").trim();
   const address = (settings?.address || "").trim();
   const hours = (settings?.working_hours || "").trim();
   const aboutText = (settings?.about_text || "").trim();
 
-  const mapUrl = settings?.google_maps_url || "";
   const logoUrl = (settings?.logo_url || "").trim();
 
   const facebook = (settings?.facebook_url || "").trim();
@@ -35,13 +47,30 @@ export default function MinimalTheme({
   const tiktok = (settings?.tiktok_url || "").trim();
   const youtube = (settings?.youtube_url || "").trim();
 
-  const mapLink =
-    mapUrl && typeof mapUrl === "string"
-      ? mapUrl.includes("output=embed")
-        ? mapUrl.replace("output=embed", "")
-        : mapUrl
-      : "";
+  // Maps
+  const mapUrl = (settings?.google_maps_url || "").trim();
+  const isEmbed =
+    !!mapUrl && /^https:\/\/www\.google\.[a-z.]+\/maps\/embed/i.test(mapUrl);
 
+  const mapEmbedSrc = isEmbed ? mapUrl : "";
+  const mapOpenLink = !isEmbed ? mapUrl : "";
+  const isProbablyUrl = (v: string) => /^https?:\/\//i.test(v);
+  const safeMapOpenLink =
+    mapOpenLink && isProbablyUrl(mapOpenLink) ? mapOpenLink : "";
+  const hasMap = !!(mapEmbedSrc || safeMapOpenLink);
+
+  // cards presence
+  const showAddressCard = !!address;
+  const showPhoneCard = !!phone;
+  const showHoursCard = !!hours;
+  const hasSocial = !!(facebook || instagram || tiktok || youtube);
+
+  const contactCardsCount =
+    (showAddressCard ? 1 : 0) +
+    (showPhoneCard ? 1 : 0) +
+    (showHoursCard ? 1 : 0);
+
+  // data arrays
   const svc = (Array.isArray(services) ? services : []) as Service[];
   const gal = (Array.isArray(gallery) ? gallery : []) as GalleryImage[];
 
@@ -72,7 +101,7 @@ export default function MinimalTheme({
   const aboutImg = (aboutGallery?.image_url || "").trim() || PLACEHOLDER;
   const pricingImg = (pricingGallery?.image_url || "").trim() || PLACEHOLDER;
 
-  // ---- section copy (всички текстове идват от settings) ----
+  // ---- section copy ----
   const copy = {
     categoryLabel: (settings?.category_label || "").trim() || "УСЛУГИ",
     heroTitle: (settings?.hero_title || "").trim(),
@@ -97,16 +126,12 @@ export default function MinimalTheme({
       (settings?.pricing_badge || "").trim() ||
       "Без плащане онлайн • Плащане в обекта",
 
-    // основна галерия (работа + обект)
     galleryEyebrow: (settings?.gallery_eyebrow || "").trim(),
     galleryTitle: (settings?.gallery_title || "").trim(),
     gallerySubtitle: (settings?.gallery_subtitle || "").trim(),
 
-    // отделна секция „Галерия на обекта“
     venueGalleryEyebrow:
-      (settings?.venue_gallery_eyebrow ||
-        settings?.gallery_eyebrow ||
-        "").trim(),
+      (settings?.venue_gallery_eyebrow || settings?.gallery_eyebrow || "").trim(),
     venueGalleryTitle: (settings?.gallery_venue_title || "").trim(),
     venueGallerySubtitle:
       (settings?.venue_gallery_subtitle || "").trim() ||
@@ -117,13 +142,11 @@ export default function MinimalTheme({
     reviewsSubtitle: (settings?.reviews_subtitle || "").trim(),
 
     contactEyebrow: (settings?.contact_eyebrow || "").trim(),
-    contactTitle:
-      (settings?.contact_title || "").trim() || "Свържи се с нас",
+    contactTitle: (settings?.contact_title || "").trim() || "Свържи се с нас",
     contactSubtitle: (settings?.contact_subtitle || "").trim(),
   };
 
-  // ---- on/off флагове от settings ----
-  const sAny = (settings || {}) as any;
+  // ---- on/off flags ----
   const showServices = sAny.show_services !== false;
   const showAbout = sAny.show_about !== false;
   const showPricing = sAny.show_pricing !== false;
@@ -133,26 +156,23 @@ export default function MinimalTheme({
   const showReviews = sAny.show_reviews !== false;
   const showContact = sAny.show_contact !== false;
 
-  // ---- derived booleans ----
+  // ---- derived ----
   const hasServices = svc.length > 0;
   const hasBrands = brands.length > 0;
   const hasGallery = work.length + venue.length > 0;
   const hasVenue = venue.length > 0;
   const hasReviews = Array.isArray(reviews) && reviews.length > 0;
-  const hasContactInfo = !!(address || phone || hours || mapLink);
+  const hasContactInfo = !!(address || phone || hours || hasMap || hasSocial);
 
-  // ---- reviews (payload only) ----
+  // reviews
   const reviewsFinal: Review[] = Array.isArray(reviews)
     ? (reviews as Review[])
     : [];
 
-  // ---- featured services ----
+  // featured services
   const featuredManual = svc
     .filter((s) => !!(s as any).is_featured)
-    .sort(
-      (a: any, b: any) =>
-        (a.sort_order ?? 9999) - (b.sort_order ?? 9999),
-    )
+    .sort((a: any, b: any) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999))
     .slice(0, 3);
 
   const featuredAuto = pickFeaturedServices(svc, 3);
@@ -167,16 +187,14 @@ export default function MinimalTheme({
       PLACEHOLDER,
   }));
 
-  // ---- hero feature cards ----
+  // hero feature cards
   const heroFeatures = normalizeHeroFeatures((settings as any)?.hero_features);
 
-  // ---- branding header rules ----
+  // branding header rules
   const brandMode =
-    ((settings?.brand_mode || "text").toLowerCase() as
-      | "logo"
-      | "text") || "text";
-  const brandText =
-    (settings?.brand_text || "").trim() || client.business_name;
+    ((settings?.brand_mode || "text").toLowerCase() as "logo" | "text") ||
+    "text";
+  const brandText = (settings?.brand_text || "").trim() || client.business_name;
   const brandSubtext = (settings?.brand_subtext || "").trim();
   const brandLetter = (brandText || client.business_name || "B")
     .trim()
@@ -184,18 +202,13 @@ export default function MinimalTheme({
     .toUpperCase();
 
   return (
-    <main
-      style={{ background: surface, color: ink }}
-      className="min-h-screen"
-    >
+    <main style={{ background: surface, color: ink }} className="min-h-screen">
       {/* TOP BAR */}
-      <header className="sticky top-0 z-30 border-b border-black/10 bg-[#F3D8D4]/80 backdrop-blur">
-        <div
-          className={cx(
-            container,
-            "flex items-center justify-between px-6 py-4",
-          )}
-        >
+      <header
+        className="sticky top-0 z-30 border-b border-black/10 backdrop-blur"
+        style={{ background: hexToRgba(bg, 0.86) }}
+      >
+        <div className={cx(container, "flex items-center justify-between px-6 py-4")}>
           {/* Brand */}
           <a href="#" className="flex items-center gap-3 min-w-0">
             {brandMode === "logo" && logoUrl ? (
@@ -219,9 +232,7 @@ export default function MinimalTheme({
                     {brandText}
                   </div>
                   {brandSubtext ? (
-                    <div className="text-xs text-black/55 truncate">
-                      {brandSubtext}
-                    </div>
+                    <div className="text-xs text-black/55 truncate">{brandSubtext}</div>
                   ) : null}
                 </div>
               </>
@@ -229,39 +240,60 @@ export default function MinimalTheme({
           </a>
 
           {/* Nav */}
-          <nav className="hidden items-center gap-7 text-sm text-black/60 md:flex">
+          <nav className="hidden items-center gap-7 text-[14px] font-semibold text-black/85 md:flex">
             {showServices && hasServices && (
-              <a href="#services" className="hover:text-black">
+              <a
+                href="#services"
+                className="relative hover:text-black after:absolute after:-bottom-1 after:left-0 after:h-[1px] after:w-0 after:bg-black after:transition-all hover:after:w-full"
+              >
                 Услуги
               </a>
             )}
             {showAbout && (
-              <a href="#about" className="hover:text-black">
+              <a
+                href="#about"
+                className="relative hover:text-black after:absolute after:-bottom-1 after:left-0 after:h-[1px] after:w-0 after:bg-black after:transition-all hover:after:w-full"
+              >
                 За нас
               </a>
             )}
             {showPricing && hasServices && (
-              <a href="#pricing" className="hover:text-black">
+              <a
+                href="#pricing"
+                className="relative hover:text-black after:absolute after:-bottom-1 after:left-0 after:h-[1px] after:w-0 after:bg-black after:transition-all hover:after:w-full"
+              >
                 Цени
               </a>
             )}
             {showGallery && hasGallery && (
-              <a href="#gallery" className="hover:text-black">
+              <a
+                href="#gallery"
+                className="relative hover:text-black after:absolute after:-bottom-1 after:left-0 after:h-[1px] after:w-0 after:bg-black after:transition-all hover:after:w-full"
+              >
                 Галерия
               </a>
             )}
             {showVenue && hasVenue && (
-              <a href="#venue" className="hover:text-black">
+              <a
+                href="#venue"
+                className="relative hover:text-black after:absolute after:-bottom-1 after:left-0 after:h-[1px] after:w-0 after:bg-black after:transition-all hover:after:w-full"
+              >
                 Обект
               </a>
             )}
             {showReviews && hasReviews && (
-              <a href="#reviews" className="hover:text-black">
+              <a
+                href="#reviews"
+                className="relative hover:text-black after:absolute after:-bottom-1 after:left-0 after:h-[1px] after:w-0 after:bg-black after:transition-all hover:after:w-full"
+              >
                 Отзиви
               </a>
             )}
             {showContact && hasContactInfo && (
-              <a href="#contact" className="hover:text-black">
+              <a
+                href="#contact"
+                className="relative hover:text-black after:absolute after:-bottom-1 after:left-0 after:h-[1px] after:w-0 after:bg-black after:transition-all hover:after:w-full"
+              >
                 Контакти
               </a>
             )}
@@ -270,31 +302,17 @@ export default function MinimalTheme({
           {/* Social + CTA */}
           <div className="flex items-center gap-3">
             <div className="hidden md:flex items-center gap-2">
-              <SocialIcon
-                href={facebook}
-                label="Facebook"
-                icon="facebook"
-              />
-              <SocialIcon
-                href={instagram}
-                label="Instagram"
-                icon="instagram"
-              />
-              <SocialIcon
-                href={tiktok}
-                label="TikTok"
-                icon="tiktok"
-              />
-              <SocialIcon
-                href={youtube}
-                label="YouTube"
-                icon="youtube"
-              />
+              <SocialIcon href={facebook} label="Facebook" icon="facebook" />
+              <SocialIcon href={instagram} label="Instagram" icon="instagram" />
+              <SocialIcon href={tiktok} label="TikTok" icon="tiktok" />
+              <SocialIcon href={youtube} label="YouTube" icon="youtube" />
             </div>
 
-            <ThemeButton href={booking} style={{ background: primary }}>
-              Запази час
-            </ThemeButton>
+            {showHeaderCta ? (
+              <ThemeButton href={booking} style={{ background: primary }}>
+                {ctaLabel}
+              </ThemeButton>
+            ) : null}
           </div>
         </div>
       </header>
@@ -310,8 +328,9 @@ export default function MinimalTheme({
               </div>
 
               <h1
-                className="mt-5 font-serif text-[46px] leading-[0.93] tracking-[-0.02em] text-[#111827] md:text-[78px] lg:text-[86px]"
+                className="mt-5 font-serif text-[46px] leading-[0.93] tracking-[-0.02em] md:text-[78px] lg:text-[86px]"
                 style={{
+                  color: ink,
                   fontFamily:
                     "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif",
                 }}
@@ -334,17 +353,15 @@ export default function MinimalTheme({
               ) : null}
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <ThemeButton href={booking} style={{ background: primary }}>
-                  Запази час
-                </ThemeButton>
+                {showHeroCta ? (
+                  <ThemeButton href="#pricing" style={{ background: primary }}>
+                    {ctaLabel}
+                  </ThemeButton>
+                ) : null}
 
-                {phone ? (
-                  <ThemeButton
-                    href={`tel:${phone}`}
-                    variant="secondary"
-                    className="gap-2"
-                  >
-                    Обади се
+                {showHeroCall && phone ? (
+                  <ThemeButton href={`tel:${phone}`} variant="secondary" className="gap-2">
+                    {callLabel}
                   </ThemeButton>
                 ) : null}
               </div>
@@ -359,17 +376,13 @@ export default function MinimalTheme({
                     >
                       <div className="flex items-center gap-2">
                         <div className="h-9 w-9 rounded-xl bg-white/70 ring-1 ring-black/10 grid place-items-center">
-                          <span className="text-base" aria-hidden>
-                            {x.icon}
-                          </span>
+                          <FaIcon name={x.icon} sizePx={16} className="opacity-90" />
                         </div>
-                        <div className="text-sm font-semibold text-[#111827]">
+                        <div className="text-sm font-semibold" style={{ color: ink }}>
                           {x.title}
                         </div>
                       </div>
-                      <div className="mt-3 text-xs leading-5 text-black/60">
-                        {x.text}
-                      </div>
+                      <div className="mt-3 text-xs leading-5 text-black/60">{x.text}</div>
                     </div>
                   ))}
                 </div>
@@ -409,28 +422,20 @@ export default function MinimalTheme({
 
       {/* FEATURED SERVICES */}
       {showServices && hasServices && featuredWithImages.length > 0 && (
-        <section
-          id="services"
-          className="bg-[#F6EEE9] border-b border-black/10"
-        >
+        <section id="services" style={{ background: surface }} className="border-b border-black/10">
           <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
             <div className="text-center">
               {copy.servicesEyebrow ? (
-                <div
-                  className="text-sm italic opacity-70"
-                  style={{ fontFamily: "cursive" }}
-                >
+                <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                   {copy.servicesEyebrow}
                 </div>
               ) : null}
               {copy.servicesTitle ? (
-                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                   {copy.servicesTitle}
                 </h2>
               ) : null}
-              {copy.servicesSubtitle ? (
-                <p className="mt-4 opacity-70">{copy.servicesSubtitle}</p>
-              ) : null}
+              {copy.servicesSubtitle ? <p className="mt-4 opacity-70">{copy.servicesSubtitle}</p> : null}
             </div>
 
             <div className="mt-10 grid gap-6 md:grid-cols-3">
@@ -454,28 +459,20 @@ export default function MinimalTheme({
                     }
                   />
                   <div className="p-6">
-                    <div className="text-xl font-semibold font-serif">
+                    <div className="text-xl font-semibold font-serif" style={{ color: ink }}>
                       {s.name}
                     </div>
-                    {s.description ? (
-                      <div className="mt-2 opacity-70 line-clamp-2">
-                        {s.description}
-                      </div>
-                    ) : null}
+
+                    {s.description ? <div className="mt-2 opacity-70 line-clamp-2">{s.description}</div> : null}
 
                     <div className="mt-5 flex items-center justify-between">
                       <div className="opacity-80">
                         от{" "}
-                        <span
-                          style={{ color: primary }}
-                          className="font-semibold"
-                        >
+                        <span style={{ color: primary }} className="font-semibold">
                           {formatPriceBG(s.price_from)}
                         </span>
                       </div>
-                      <span className="text-sm font-semibold opacity-70 group-hover:opacity-100 transition">
-                        →
-                      </span>
+                      <span className="text-sm font-semibold opacity-70 group-hover:opacity-100 transition">→</span>
                     </div>
                   </div>
                 </a>
@@ -487,11 +484,7 @@ export default function MinimalTheme({
 
       {/* ABOUT */}
       {showAbout && (
-        <section
-          id="about"
-          style={{ background: bg }}
-          className="border-b border-black/10"
-        >
+        <section id="about" style={{ background: bg }} className="border-b border-black/10">
           <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
             <div className="grid lg:grid-cols-12 gap-10 items-start">
               <div className="lg:col-span-7">
@@ -511,16 +504,13 @@ export default function MinimalTheme({
 
               <div className="lg:col-span-5">
                 {copy.aboutEyebrow ? (
-                  <div
-                    className="text-sm italic opacity-70"
-                    style={{ fontFamily: "cursive" }}
-                  >
+                  <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                     {copy.aboutEyebrow}
                   </div>
                 ) : null}
 
                 {copy.aboutTitle ? (
-                  <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+                  <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                     {copy.aboutTitle}
                   </h2>
                 ) : null}
@@ -532,31 +522,13 @@ export default function MinimalTheme({
                 ) : null}
 
                 <div className="mt-8 flex flex-wrap items-center gap-3">
-                  {phone ? (
-                    <ThemeButton
-                      href={`tel:${phone}`}
-                      variant="secondary"
-                      className="gap-2"
-                    >
-                      <span
-                        className="h-10 w-10 rounded-full grid place-items-center text-base"
-                        style={{
-                          background: "rgba(255,255,255,0.65)",
-                          border: "1px solid rgba(0,0,0,0.10)",
-                        }}
-                        aria-hidden
-                      >
-                        ☎
-                      </span>
-                      <span>{phone}</span>
+                  {showHeroCall && phone ? (
+                    <ThemeButton href={`tel:${phone}`} variant="secondary" className="gap-2">
+                      {callLabel}
                     </ThemeButton>
                   ) : null}
 
-                  <ThemeButton
-                    href="#pricing"
-                    style={{ background: primary }}
-                    className="px-6"
-                  >
+                  <ThemeButton href="#pricing" style={{ background: primary }} className="px-6">
                     {copy.aboutCta}
                   </ThemeButton>
                 </div>
@@ -566,48 +538,39 @@ export default function MinimalTheme({
         </section>
       )}
 
-      {/* GALLERY – обща галерия (работа + обект) */}
+      {/* GALLERY – work */}
       {showGallery && hasGallery && (
-        <section
-          id="gallery"
-          style={{ background: surface }}
-          className="border-b border-black/10"
-        >
-          <div className="mx-auto max-w-7xl px-6 pt-10 pb-16 md:pt-14 md:pb-20">
-            <div className="text-center">
-              {copy.galleryEyebrow ? (
-                <div
-                  className="text-sm italic opacity-70"
-                  style={{ fontFamily: "cursive" }}
-                >
-                  {copy.galleryEyebrow}
+        <section id="gallery" style={{ background: surface }} className="border-b border-black/10">
+          {(() => {
+            const galleryItems = [...work, ...venue];
+            if (!galleryItems.length) return null;
+
+            return (
+              <>
+                <div className="mx-auto max-w-7xl px-6 pt-10 md:pt-14">
+                  <div className="text-center">
+                    {copy.galleryEyebrow ? (
+                      <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
+                        {copy.galleryEyebrow}
+                      </div>
+                    ) : null}
+
+                    {copy.galleryTitle ? (
+                      <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
+                        {copy.galleryTitle}
+                      </h2>
+                    ) : null}
+
+                    {copy.gallerySubtitle ? <p className="mt-4 opacity-70">{copy.gallerySubtitle}</p> : null}
+                  </div>
                 </div>
-              ) : null}
-              {copy.galleryTitle ? (
-                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
-                  {copy.galleryTitle}
-                </h2>
-              ) : null}
-              {copy.gallerySubtitle ? (
-                <p className="mt-4 opacity-70">
-                  {copy.gallerySubtitle}
-                </p>
-              ) : null}
-            </div>
 
-            {(() => {
-              const galleryItems = [...work, ...venue];
-              if (!galleryItems.length) {
-                return null;
-              }
-
-              return (
-                <div className="mt-6 w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw]">
+                <div className="mt-6 w-full overflow-x-clip pb-16 md:pb-20">
                   <WorkCarousel items={galleryItems} />
                 </div>
-              );
-            })()}
-          </div>
+              </>
+            );
+          })()}
         </section>
       )}
 
@@ -615,29 +578,19 @@ export default function MinimalTheme({
       {showPricing && hasServices && (
         <>
           {pricingLayout === "v2" ? (
-            <section
-              id="pricing"
-              className="bg-[#F6EEE9] border-b border-black/10"
-            >
+            <section id="pricing" style={{ background: surface }} className="border-b border-black/10">
               <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
                 <div className="flex items-end justify-between gap-6 flex-wrap">
                   <div>
                     {copy.pricingEyebrow ? (
-                      <div
-                        className="text-sm italic opacity-70"
-                        style={{ fontFamily: "cursive" }}
-                      >
+                      <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                         {copy.pricingEyebrow}
                       </div>
                     ) : null}
-                    <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+                    <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                       {copy.pricingTitle}
                     </h2>
-                    {copy.pricingSubtitle ? (
-                      <p className="mt-3 opacity-70 max-w-xl">
-                        {copy.pricingSubtitle}
-                      </p>
-                    ) : null}
+                    {copy.pricingSubtitle ? <p className="mt-3 opacity-70 max-w-xl">{copy.pricingSubtitle}</p> : null}
                   </div>
 
                   <div className="rounded-2xl border border-black/10 bg-white/60 px-4 py-3 text-sm text-black/60">
@@ -646,22 +599,14 @@ export default function MinimalTheme({
                 </div>
 
                 <div className="mt-6">
-                  <ServicesTabsV2
-                    services={svc}
-                    primary={primary}
-                    slug={client.slug}
-                  />
+                  <ServicesTabsV2 services={svc} primary={primary} slug={client.slug} />
                 </div>
               </div>
             </section>
           ) : (
-            <section
-              id="pricing"
-              className="bg-[#F6EEE9] border-b border-black/10"
-            >
+            <section id="pricing" style={{ background: surface }} className="border-b border-black/10">
               <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
                 <div className="grid lg:grid-cols-12 gap-10 items-stretch">
-                  {/* LEFT IMAGE */}
                   <div className="lg:col-span-6 self-stretch">
                     <div className="h-full">
                       <div className="relative h-full min-h-[520px] rounded-2xl bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] overflow-hidden">
@@ -679,45 +624,27 @@ export default function MinimalTheme({
                     </div>
                   </div>
 
-                  {/* RIGHT */}
                   <div className="lg:col-span-6">
-                    <div
-                      style={{ background: bg }}
-                      className="border border-black/10 p-8 md:p-10 h-full rounded-2xl"
-                    >
+                    <div style={{ background: bg }} className="border border-black/10 p-8 md:p-10 h-full rounded-2xl">
                       {copy.pricingEyebrow ? (
-                        <div
-                          className="text-sm italic opacity-70"
-                          style={{ fontFamily: "cursive" }}
-                        >
+                        <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                           {copy.pricingEyebrow}
                         </div>
                       ) : null}
 
-                      <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+                      <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                         {copy.pricingTitle}
                       </h2>
 
-                      {copy.pricingSubtitle ? (
-                        <p className="mt-4 opacity-75 max-w-xl">
-                          {copy.pricingSubtitle}
-                        </p>
-                      ) : null}
+                      {copy.pricingSubtitle ? <p className="mt-4 opacity-75 max-w-xl">{copy.pricingSubtitle}</p> : null}
 
                       <div className="mt-8">
-                        <ServicesTabs
-                          services={svc}
-                          primary={primary}
-                          slug={client.slug}
-                        />
+                        <ServicesTabs services={svc} primary={primary} slug={client.slug} />
                       </div>
 
                       <div className="mt-10">
-                        <ThemeButton
-                          href={booking}
-                          style={{ background: primary }}
-                        >
-                          Запази час
+                        <ThemeButton href={booking} style={{ background: primary }}>
+                          {ctaLabel}
                         </ThemeButton>
                       </div>
                     </div>
@@ -731,30 +658,20 @@ export default function MinimalTheme({
 
       {/* BRANDS */}
       {showBrands && hasBrands && (
-        <section
-          style={{ background: surface }}
-          className="border-b border-black/10"
-        >
+        <section style={{ background: surface }} className="border-b border-black/10">
           <div className="mx-auto max-w-7xl px-6 py-14 md:py-16">
             <div>
               {copy.brandsEyebrow ? (
-                <div
-                  className="text-sm italic opacity-70"
-                  style={{ fontFamily: "cursive" }}
-                >
+                <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                   {copy.brandsEyebrow}
                 </div>
               ) : null}
               {copy.brandsTitle ? (
-                <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+                <h2 className="mt-2 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                   {copy.brandsTitle}
                 </h2>
               ) : null}
-              {copy.brandsSubtitle ? (
-                <p className="mt-3 opacity-70 max-w-2xl">
-                  {copy.brandsSubtitle}
-                </p>
-              ) : null}
+              {copy.brandsSubtitle ? <p className="mt-3 opacity-70 max-w-2xl">{copy.brandsSubtitle}</p> : null}
             </div>
 
             <div className="mt-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -764,11 +681,7 @@ export default function MinimalTheme({
                   className="h-24 rounded-xl border border-black/10 bg-white shadow-sm grid place-items-center p-4"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={b.image_url}
-                    alt=""
-                    className="max-h-full max-w-full object-contain opacity-90"
-                  />
+                  <img src={b.image_url} alt="" className="max-h-full max-w-full object-contain opacity-90" />
                 </div>
               ))}
             </div>
@@ -776,54 +689,26 @@ export default function MinimalTheme({
         </section>
       )}
 
-      {/* VENUE GALLERY (secondary) */}
+      {/* VENUE GALLERY */}
       {showVenue && hasVenue && (
-        <section
-          id="venue"
-          style={{ background: bg }}
-          className="border-b border-black/10"
-        >
+        <section id="venue" style={{ background: bg }} className="border-b border-black/10">
           <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
             <div className="text-center">
               {copy.venueGalleryEyebrow ? (
-                <div
-                  className="text-sm italic opacity-70"
-                  style={{ fontFamily: "cursive" }}
-                >
+                <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                   {copy.venueGalleryEyebrow}
                 </div>
               ) : null}
 
-              <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+              <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                 {copy.venueGalleryTitle}
               </h2>
 
-              {copy.venueGallerySubtitle ? (
-                <p className="mt-3 opacity-70">
-                  {copy.venueGallerySubtitle}
-                </p>
-              ) : null}
+              {copy.venueGallerySubtitle ? <p className="mt-3 opacity-70">{copy.venueGallerySubtitle}</p> : null}
             </div>
 
             <div className="mt-12">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {venue.slice(0, 9).map((img) => (
-                  <a
-                    key={img.id}
-                    href={img.image_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm hover:shadow-md transition"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img.image_url}
-                      alt=""
-                      className="h-64 w-full object-cover"
-                    />
-                  </a>
-                ))}
-              </div>
+              <VenueGallery venue={venue} />
             </div>
           </div>
         </section>
@@ -831,159 +716,146 @@ export default function MinimalTheme({
 
       {/* REVIEWS */}
       {showReviews && hasReviews && (
-        <section
-          id="reviews"
-          style={{ background: surface }}
-          className="border-b border-black/10"
-        >
-          <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
+        <section id="reviews" style={{ background: surface }} className="border-b border-black/10">
+          <div className="mx-auto max-w-7xl px-6 pt-16 md:pt-20">
             <div className="text-center">
               {copy.reviewsEyebrow ? (
-                <div
-                  className="text-sm italic opacity-70"
-                  style={{ fontFamily: "cursive" }}
-                >
+                <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                   {copy.reviewsEyebrow}
                 </div>
               ) : null}
 
               {copy.reviewsTitle ? (
-                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+                <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                   {copy.reviewsTitle}
                 </h2>
               ) : null}
-              {copy.reviewsSubtitle ? (
-                <p className="mt-3 opacity-70">
-                  {copy.reviewsSubtitle}
-                </p>
-              ) : null}
-            </div>
 
-            <div className="mt-10">
-              <ReviewsCarousel
-                reviews={reviewsFinal.slice(0, 6)}
-                primary={primary}
-              />
+              {copy.reviewsSubtitle ? <p className="mt-3 opacity-70">{copy.reviewsSubtitle}</p> : null}
             </div>
+          </div>
+
+          <div className="mt-10 w-full overflow-x-clip pb-16 md:pb-20">
+            <ReviewsCarousel
+              reviews={reviewsFinal.slice(0, 8)}
+              primary={primary}
+              bg={surface}
+            />
           </div>
         </section>
       )}
-
+      
       {/* CONTACT */}
       {showContact && hasContactInfo && (
         <section id="contact" style={{ background: bg }}>
           <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
             <div className="text-center">
               {copy.contactEyebrow ? (
-                <div
-                  className="text-sm italic opacity-70"
-                  style={{ fontFamily: "cursive" }}
-                >
+                <div className="text-sm italic opacity-70" style={{ fontFamily: "cursive" }}>
                   {copy.contactEyebrow}
                 </div>
               ) : null}
 
-              <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide">
+              <h2 className="mt-3 font-serif text-3xl md:text-4xl font-semibold tracking-wide" style={{ color: ink }}>
                 {copy.contactTitle}
               </h2>
 
-              {copy.contactSubtitle ? (
-                <p className="mt-3 opacity-70">
-                  {copy.contactSubtitle}
-                </p>
-              ) : null}
+              {copy.contactSubtitle ? <p className="mt-3 opacity-70">{copy.contactSubtitle}</p> : null}
             </div>
 
-            <div className="mt-10 bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] p-4 rounded-2xl">
-              <div className="bg-[#f3f3f3] border border-black/10 rounded-xl">
-                <div className="h-64 md:h-80 grid place-items-center text-sm opacity-70">
-                  {mapLink ? (
-                    <a
-                      href={mapLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline"
-                    >
-                      Отвори в Google Maps →
-                    </a>
-                  ) : (
-                    <div>Добави google_maps_url</div>
-                  )}
+            {/* MAP (only if exists) */}
+            {hasMap ? (
+              <div className="mt-10 bg-white border border-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.10)] p-4 rounded-2xl">
+                <div className="bg-[#f3f3f3] border border-black/10 rounded-2xl overflow-hidden">
+                  <div className="h-64 md:h-80">
+                    {mapEmbedSrc ? (
+                      <iframe
+                        src={mapEmbedSrc}
+                        width="100%"
+                        height="100%"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                        allowFullScreen
+                        title="Google Map"
+                      />
+                    ) : (
+                      <div className="h-full grid place-items-center text-sm opacity-70">
+                        <a href={safeMapOpenLink} target="_blank" rel="noreferrer" className="underline">
+                          Отвори в Google Maps →
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="mt-10 grid md:grid-cols-3 gap-6">
-              <ContactCard
-                title="Адрес"
-                value={address || "—"}
-                icon="📍"
-              />
-              <ContactCard
-                title="Телефон"
-                value={phone || "—"}
-                icon="☎"
-              />
-              <ContactCard
-                title="Работно време"
-                value={hours || "—"}
-                icon="🕒"
-              />
-            </div>
+            {/* CONTACT CARDS (render only existing fields) */}
+            {contactCardsCount > 0 ? (
+              <div className="mt-10 grid gap-6 items-stretch md:grid-cols-3">
+                {address ? (
+                  <ContactCard
+                    title="Адрес"
+                    value={address}
+                    icon={<FaIcon name="map-marker-alt" sizePx={30} className="text-black/70" />}
+                  />
+                ) : null}
 
-            <div className="mt-10 flex items-center justify-center gap-2">
-              <SocialIcon
-                href={facebook}
-                label="Facebook"
-                icon="facebook"
-              />
-              <SocialIcon
-                href={instagram}
-                label="Instagram"
-                icon="instagram"
-              />
-              <SocialIcon
-                href={tiktok}
-                label="TikTok"
-                icon="tiktok"
-              />
-              <SocialIcon
-                href={youtube}
-                label="YouTube"
-                icon="youtube"
-              />
-            </div>
+                {phone ? (
+                  <ContactCard
+                    title="Телефон"
+                    value={phone}
+                    icon={<FaIcon name="phone" sizePx={30} className="text-black/70" />}
+                  />
+                ) : null}
+
+                {hours ? (
+                  <ContactCard
+                    title="Работно време"
+                    value={hours}
+                    icon={<FaIcon name="clock" sizePx={30} className="text-black/70" />}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* SOCIAL (only if has any) */}
+            {hasSocial ? (
+              <div className="mt-10 flex items-center justify-center gap-2">
+                <SocialIcon href={facebook} label="Facebook" icon="facebook" />
+                <SocialIcon href={instagram} label="Instagram" icon="instagram" />
+                <SocialIcon href={tiktok} label="TikTok" icon="tiktok" />
+                <SocialIcon href={youtube} label="YouTube" icon="youtube" />
+              </div>
+            ) : null}
           </div>
         </section>
       )}
 
-      <footer className="border-t border-black/10">
+      <footer className="border-t border-black/10" style={{ background: surface }}>
         <div className="mx-auto max-w-7xl px-6 py-10 flex items-center justify-between flex-wrap gap-4 opacity-70 text-sm">
           <div>
             © {new Date().getFullYear()} {client.business_name}
           </div>
-          {showServices && hasServices && (
+          {showServices && hasServices ? (
             <a href="#services" className="underline">
               Услуги
             </a>
-          )}
+          ) : null}
         </div>
       </footer>
-
 
       {/* Mobile CTA */}
       <div className="md:hidden fixed bottom-3 left-0 right-0 px-4 z-40">
         <div className="max-w-2xl mx-auto bg-white/90 backdrop-blur border border-black/10 shadow-lg p-3 flex gap-3 rounded-2xl">
           <ThemeButton href={booking} fullWidth style={{ background: primary }}>
-            Запази
+            {ctaLabel || "Запази"}
           </ThemeButton>
+
           {phone ? (
-            <ThemeButton
-              href={`tel:${phone}`}
-              variant="secondary"
-              fullWidth
-            >
-              Обади се
+            <ThemeButton href={`tel:${phone}`} variant="secondary" fullWidth>
+              {callLabel || "Обади се"}
             </ThemeButton>
           ) : null}
         </div>
@@ -1007,13 +879,33 @@ function ContactCard({
 }: {
   title: string;
   value: string;
-  icon: string;
+  icon: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-black/10 shadow-[0_18px_50px_rgba(0,0,0,0.07)] p-6 text-center rounded-2xl">
-      <div className="text-3xl">{icon}</div>
-      <div className="mt-3 font-semibold">{title}</div>
-      <div className="mt-2 opacity-70">{value}</div>
+    <div
+      className="
+        bg-white border border-black/10
+        shadow-[0_18px_50px_rgba(0,0,0,0.07)]
+        rounded-2xl
+        px-6 py-6
+        text-center
+        flex flex-col items-center
+      "
+    >
+      {/* Icon */}
+      <div className="h-12 w-12 grid place-items-center mb-3">
+        {icon}
+      </div>
+
+      {/* Title */}
+      <div className="text-[16px] font-bold leading-tight">
+        {title}
+      </div>
+
+      {/* Value */}
+      <div className="mt-4 text-[15px] leading-6 text-black/80 break-words">
+        {value}
+      </div>
     </div>
   );
 }
@@ -1037,17 +929,15 @@ function pickFeaturedServices(services: Service[], count: number) {
 
   for (const c of cats) {
     const best =
-      byCat[c]?.find((x) =>
-        Number.isFinite(Number((x as any)?.price_from)),
-      ) || byCat[c]?.[0];
+      byCat[c]?.find((x) => Number.isFinite(Number((x as any)?.price_from))) ||
+      byCat[c]?.[0];
     if (best) picked.push(best);
     if (picked.length >= count) break;
   }
 
   if (picked.length < count) {
     for (const s of services) {
-      if (!picked.find((p) => (p as any).id === (s as any).id))
-        picked.push(s);
+      if (!picked.find((p) => (p as any).id === (s as any).id)) picked.push(s);
       if (picked.length >= count) break;
     }
   }
@@ -1056,21 +946,16 @@ function pickFeaturedServices(services: Service[], count: number) {
 }
 
 function normalizeHeroFeatures(raw: any) {
-  // Няма данни или не е масив → не показваме нищо
   if (!Array.isArray(raw)) return [];
 
-  const cleaned = raw
+  return raw
     .slice(0, 3)
     .map((x) => ({
-      icon: (x?.icon || "").toString().trim() || "✨",
+      icon: (x?.icon || "").toString().trim() || "star",
       title: (x?.title || "").toString().trim(),
       text: (x?.text || "").toString().trim(),
     }))
-    // Показваме само карти с реално заглавие и текст
     .filter((x) => x.title.length > 0 && x.text.length > 0);
-
-  // Ако всички са празни → празен масив, секцията не се рендва
-  return cleaned;
 }
 
 // IMPORTANT: icons come from /public/icons/*.svg
@@ -1098,11 +983,20 @@ function SocialIcon({
       rel="noreferrer"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`/icons/${icon}.svg`}
-        alt={label}
-        className="h-[18px] w-[18px]"
-      />
+      <img src={`/icons/${icon}.svg`} alt={label} className="h-[18px] w-[18px]" />
     </a>
   );
+}
+
+/**
+ * Convert hex (#RRGGBB) to rgba(r,g,b,a).
+ * Used for header translucent background.
+ */
+function hexToRgba(hex: string, alpha: number) {
+  const h = (hex || "").replace("#", "").trim();
+  if (h.length !== 6) return `rgba(243,216,212,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }

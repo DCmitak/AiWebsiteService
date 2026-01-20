@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { Review } from "../types";
+import type { Review } from "../../types";
 import "./ReviewsCarousel.css";
 
 type Props = {
@@ -41,7 +41,7 @@ export default function ReviewsCarousel({
   useEffect(() => {
     const calc = () => {
       const w = window.innerWidth;
-      const pv = w >= 1024 ? 3 : w >= 768 ? 2 : 1;
+      const pv = w >= 1280 ? 5 : w >= 1024 ? 3 : w >= 768 ? 2 : 1;
       setPerView(pv);
     };
     calc();
@@ -265,7 +265,9 @@ export default function ReviewsCarousel({
                   <div className="rc-avatar" aria-hidden />
                   <div className="rc-meta">
                     <div className="rc-author">{r.author}</div>
-                    <div className="rc-rating">оценка: {r.rating}/5</div>
+                    <div className="rc-rating" aria-label={`Оценка: ${normalizeRating(r.rating)} от 5`}>
+                      <Stars value={normalizeRating(r.rating)} />
+                    </div>
                   </div>
                 </div>
 
@@ -288,5 +290,35 @@ export default function ReviewsCarousel({
         </>
       ) : null}
     </div>
+  );
+}
+
+function normalizeRating(v: any) {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return 5;
+  return Math.max(1, Math.min(5, Math.round(n)));
+}
+
+function Stars({ value }: { value: number }) {
+  // 5 звезди, запълваме value
+  return (
+    <div className="rc-stars" aria-hidden>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Star key={i} filled={i < value} />
+      ))}
+    </div>
+  );
+}
+
+function Star({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={filled ? "rc-star rc-star-filled" : "rc-star rc-star-empty"}
+      focusable="false"
+      aria-hidden="true"
+    >
+      <path d="M12 17.27l5.18 3.12-1.64-5.81L20.5 9.5l-6.0-.52L12 3.5 9.5 8.98l-6.0.52 4.96 5.08-1.64 5.81L12 17.27z" />
+    </svg>
   );
 }

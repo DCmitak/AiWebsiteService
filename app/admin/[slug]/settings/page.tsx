@@ -1,15 +1,30 @@
 // app/admin/[slug]/settings/page.tsx
+import type React from "react";
 import { supabaseServer } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AdminTopNav from "@/app/admin/_components/AdminTopNav";
+import FaIconPreview from "@/app/admin/_components/FaIconPreview";
+import ColorFieldClient from "@/app/admin/_components/ColorFieldClient";
 
 type SiteSettingsRow = {
   client_id: string;
 
   theme_preset?: string | null;
+  // theme colors (Minimal)
   primary_color?: string | null;
+  theme_bg?: string | null;
+  theme_surface?: string | null;
+  theme_ink?: string | null;
+
+  // CTA / Hero buttons
+  cta_label?: string | null;
+  call_label?: string | null;
+  show_header_cta?: boolean | null;  // Запази час в header
+  show_hero_cta?: boolean | null;    // Запази час в hero
+  show_hero_call?: boolean | null;   // Обади се в hero
+
 
   // branding
   logo_url?: string | null;
@@ -145,6 +160,19 @@ export default async function AdminSettings(props: {
   async function save(formData: FormData) {
     "use server";
 
+    const themeBg = pickColor(formData, "theme_bg");
+    const themeSurface = pickColor(formData, "theme_surface");
+    const themeInk = pickColor(formData, "theme_ink");
+
+    const primaryColor = pickColor(formData, "primary_color") || "#dca263";
+
+    const ctaLabel = (formData.get("cta_label")?.toString() || "").trim() || null;
+    const callLabel = (formData.get("call_label")?.toString() || "").trim() || null;
+
+    const showHeaderCta = formData.get("show_header_cta")?.toString() === "on";
+    const showHeroCta = formData.get("show_hero_cta")?.toString() === "on";
+    const showHeroCall = formData.get("show_hero_call")?.toString() === "on";
+
     const key = formData.get("key")?.toString();
     if (!key || key !== process.env.ADMIN_KEY) throw new Error("Unauthorized");
 
@@ -153,9 +181,6 @@ export default async function AdminSettings(props: {
 
     const themePreset =
       (formData.get("theme_preset")?.toString() || "").trim() || "minimal";
-    const primaryColor =
-      (formData.get("primary_color")?.toString() || "").trim() || "#dca263";
-
     const rawPricingLayout = (
       formData.get("pricing_layout")?.toString() || "v1"
     )
@@ -172,6 +197,10 @@ export default async function AdminSettings(props: {
 
     const features = buildHeroFeaturesFromForm(formData);
 
+    // Google Maps: accept iframe OR embed URL; store normalized value in google_maps_url
+    const mapsRaw = (formData.get("google_maps_embed")?.toString() || "").trim();
+    const googleMapsEmbed = extractGoogleMapsEmbedSrc(mapsRaw);
+
     // visibility toggles (checkbox → boolean)
     const showServices = formData.get("show_services")?.toString() === "on";
     const showAbout = formData.get("show_about")?.toString() === "on";
@@ -187,11 +216,20 @@ export default async function AdminSettings(props: {
 
       theme_preset: themePreset,
       primary_color: primaryColor,
+      theme_bg: themeBg,
+      theme_surface: themeSurface,
+      theme_ink: themeInk,
+
+      cta_label: ctaLabel,
+      call_label: callLabel,
+      show_header_cta: showHeaderCta,
+      show_hero_cta: showHeroCta,
+      show_hero_call: showHeroCall,
+
       pricing_layout: pricingLayout,
 
       brand_mode: brandMode,
-      brand_text:
-        (formData.get("brand_text")?.toString() || "").trim() || null,
+      brand_text: (formData.get("brand_text")?.toString() || "").trim() || null,
       brand_subtext:
         (formData.get("brand_subtext")?.toString() || "").trim() || null,
 
@@ -210,14 +248,14 @@ export default async function AdminSettings(props: {
 
       about_text: (formData.get("about_text")?.toString() || "").trim() || null,
 
-      google_maps_url:
-        (formData.get("google_maps_url")?.toString() || "").trim() || null,
+      // ✅ stored as embed src (preferred) OR regular maps link (fallback)
+      google_maps_url: googleMapsEmbed,
+
       instagram_url:
         (formData.get("instagram_url")?.toString() || "").trim() || null,
       facebook_url:
         (formData.get("facebook_url")?.toString() || "").trim() || null,
-      tiktok_url:
-        (formData.get("tiktok_url")?.toString() || "").trim() || null,
+      tiktok_url: (formData.get("tiktok_url")?.toString() || "").trim() || null,
       youtube_url:
         (formData.get("youtube_url")?.toString() || "").trim() || null,
 
@@ -301,9 +339,7 @@ export default async function AdminSettings(props: {
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/settings`);
-    redirect(
-      `/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=saved`,
-    );
+    redirect(`/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=saved`);
   }
 
   async function uploadLogo(formData: FormData) {
@@ -319,9 +355,7 @@ export default async function AdminSettings(props: {
     if (!file || file.size <= 0) {
       revalidatePath(`/admin/${slug}/settings`);
       return redirect(
-        `/admin/${slug}/settings?key=${encodeURIComponent(
-          key,
-        )}&toast=missing_file`,
+        `/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=missing_file`,
       );
     }
 
@@ -349,15 +383,11 @@ export default async function AdminSettings(props: {
       const msg = (upErr.message || "").toLowerCase();
       if (msg.includes("bucket") && msg.includes("not")) {
         return redirect(
-          `/admin/${slug}/settings?key=${encodeURIComponent(
-            key,
-          )}&toast=bucket_missing`,
+          `/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=bucket_missing`,
         );
       }
       return redirect(
-        `/admin/${slug}/settings?key=${encodeURIComponent(
-          key,
-        )}&toast=upload_failed`,
+        `/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=upload_failed`,
       );
     }
 
@@ -375,11 +405,7 @@ export default async function AdminSettings(props: {
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/settings`);
-    redirect(
-      `/admin/${slug}/settings?key=${encodeURIComponent(
-        key,
-      )}&toast=logo_uploaded`,
-    );
+    redirect(`/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=logo_uploaded`);
   }
 
   async function removeLogo(formData: FormData) {
@@ -410,11 +436,7 @@ export default async function AdminSettings(props: {
 
     revalidatePath(`/${slug}`);
     revalidatePath(`/admin/${slug}/settings`);
-    redirect(
-      `/admin/${slug}/settings?key=${encodeURIComponent(
-        key,
-      )}&toast=logo_removed`,
-    );
+    redirect(`/admin/${slug}/settings?key=${encodeURIComponent(key)}&toast=logo_removed`);
   }
 
   const publicUrl = `/${slug}`;
@@ -437,17 +459,12 @@ export default async function AdminSettings(props: {
           </div>
         ) : null}
 
-        {/* MAIN SETTINGS FORM – включва и логото */}
-          <form action={save} className="space-y-4">
+        <form action={save} className="space-y-4">
           <input type="hidden" name="key" value={key} />
           <input type="hidden" name="client_id" value={client.id} />
           <input type="hidden" name="old_logo_url" value={s.logo_url || ""} />
 
-          <Section
-            title="Theme"
-            subtitle="Preset, primary color, pricing layout"
-            defaultOpen
-          >
+          <Section title="Theme" subtitle="Preset, primary color, pricing layout" defaultOpen>
             <FieldSelect
               name="theme_preset"
               label="Theme preset"
@@ -458,11 +475,62 @@ export default async function AdminSettings(props: {
               ]}
             />
 
-            <Field
+            <ColorFieldClient
               name="primary_color"
-              label="Primary color (#hex)"
+              label="Primary color (CTA)"
               defaultValue={s.primary_color || "#dca263"}
             />
+
+            <ColorFieldClient
+              name="theme_bg"
+              label="Theme BG (Minimal)"
+              defaultValue={s.theme_bg || "#F3D8D4"}
+            />
+
+            <ColorFieldClient
+              name="theme_surface"
+              label="Theme Surface (Minimal)"
+              defaultValue={s.theme_surface || "#F7EFEE"}
+            />
+
+            <ColorFieldClient
+              name="theme_ink"
+              label="Theme Ink/Text (Minimal)"
+              defaultValue={s.theme_ink || "#1F2430"}
+            />
+
+            <Field
+              name="cta_label"
+              label='Текст на бутона “Запази”'
+              defaultValue={s.cta_label || "Запази час"}
+            />
+
+            <Field
+              name="call_label"
+              label='Текст на бутона “Обади се”'
+              defaultValue={s.call_label || "Обади се"}
+            />
+
+            <div className="text-xs text-gray-500">
+              Линкът на “Запази” е фиксиран към #pricing.
+            </div>
+
+            <div className="mt-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="show_header_cta" defaultChecked={s.show_header_cta ?? true} />
+                Показвай “Запази час” в Header
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="show_hero_cta" defaultChecked={s.show_hero_cta ?? true} />
+                Показвай “Запази час” в Hero
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" name="show_hero_call" defaultChecked={s.show_hero_call ?? true} />
+                Показвай “Обади се” в Hero и За нас секциите (само ако има телефон)
+              </label>
+            </div>
 
             <FieldSelect
               name="pricing_layout"
@@ -474,24 +542,16 @@ export default async function AdminSettings(props: {
               ]}
             />
 
-            <div className="text-xs text-gray-500">
-              Влияе на Minimal pricing секцията.
-            </div>
+            <div className="text-xs text-gray-500">Влияе на Minimal pricing секцията.</div>
           </Section>
 
-          <Section
-            title="Branding (Minimal)"
-            subtitle="Text + circle OR logo only"
-            defaultOpen
-          >
-            {/* Logo block вътре в секцията */}
+          <Section title="Branding (Minimal)" subtitle="Text + circle OR logo only" defaultOpen>
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 mb-4 space-y-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div className="font-semibold text-sm">Logo</div>
                   <div className="text-xs text-gray-500">
-                    Upload logo image за хедъра. Препоръчително: PNG/SVG с
-                    прозрачен фон.
+                    Upload logo image за хедъра. Препоръчително: PNG/SVG с прозрачен фон.
                   </div>
                 </div>
               </div>
@@ -499,19 +559,11 @@ export default async function AdminSettings(props: {
               {s.logo_url ? (
                 <div className="flex items-center gap-4 mt-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={s.logo_url}
-                    alt="Logo"
-                    className="h-12 w-auto object-contain"
-                  />
-                  <div className="text-xs text-gray-500 break-all">
-                    {s.logo_url}
-                  </div>
+                  <img src={s.logo_url} alt="Logo" className="h-12 w-auto object-contain" />
+                  <div className="text-xs text-gray-500 break-all">{s.logo_url}</div>
                 </div>
               ) : (
-                <div className="text-sm text-gray-500 mt-2">
-                  Няма качено лого.
-                </div>
+                <div className="text-sm text-gray-500 mt-2">Няма качено лого.</div>
               )}
 
               <div className="space-y-2 mt-3">
@@ -541,14 +593,11 @@ export default async function AdminSettings(props: {
                     </button>
                   ) : null}
 
-                  <div className="text-xs text-gray-500">
-                    Max 5MB. PNG/SVG/JPG.
-                  </div>
+                  <div className="text-xs text-gray-500">Max 5MB. PNG/SVG/JPG.</div>
                 </div>
               </div>
             </div>
 
-            {/* Branding текстови настройки */}
             <FieldSelect
               name="brand_mode"
               label="Branding mode"
@@ -570,31 +619,15 @@ export default async function AdminSettings(props: {
             />
 
             <div className="text-xs text-gray-500">
-              “Logo only” показва само логото (ако има). При “Text” (или ако
-              няма лого) ще има кръг с първа буква + текст.
+              “Logo only” показва само логото (ако има). При “Text” (или ако няма лого) ще има
+              кръг с първа буква + текст.
             </div>
           </Section>
 
-          <Section
-            title="Основни"
-            subtitle="Контакти и работно време"
-            defaultOpen
-          >
-            <Field
-              name="phone"
-              label="Телефон"
-              defaultValue={s.phone || ""}
-            />
-            <Field
-              name="address"
-              label="Адрес"
-              defaultValue={s.address || ""}
-            />
-            <Field
-              name="working_hours"
-              label="Работно време"
-              defaultValue={s.working_hours || ""}
-            />
+          <Section title="Основни" subtitle="Контакти и работно време" defaultOpen>
+            <Field name="phone" label="Телефон" defaultValue={s.phone || ""} />
+            <Field name="address" label="Адрес" defaultValue={s.address || ""} />
+            <Field name="working_hours" label="Работно време" defaultValue={s.working_hours || ""} />
           </Section>
 
           <Section
@@ -607,11 +640,7 @@ export default async function AdminSettings(props: {
               label="Category label (над заглавието)"
               defaultValue={s.category_label || ""}
             />
-            <Field
-              name="hero_title"
-              label="Hero title (H1)"
-              defaultValue={s.hero_title || ""}
-            />
+            <Field name="hero_title" label="Hero title (H1)" defaultValue={s.hero_title || ""} />
             <TextArea
               name="hero_subtitle"
               label="Hero subtitle"
@@ -619,85 +648,80 @@ export default async function AdminSettings(props: {
               rows={4}
             />
 
-            <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
+            <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-semibold">
-                    Hero feature cards (max 3)
-                  </div>
+                  <div className="font-semibold">Hero feature cards (max 3)</div>
                   <div className="text-xs text-gray-500">
-                    Без JSON. Икона + заглавие + текст.
+                    Икона + заглавие + текст.
                   </div>
                 </div>
                 <div className="text-xs text-gray-500">Minimal template</div>
               </div>
 
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="rounded-2xl border border-gray-200 bg-white p-4"
-                >
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div className="text-sm font-semibold text-gray-900">
-                      Feature card #{i + 1}
+              <div className="mt-4 space-y-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="pt-4 first:pt-0 border-t first:border-t-0 border-gray-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-semibold text-gray-900">
+                        Feature card #{i + 1}
+                      </div>
+                      <div className="text-xs text-gray-500">Shown in hero</div>
                     </div>
-                    <div className="text-xs text-gray-500">Shown in hero</div>
-                  </div>
 
-                  <div className="grid md:grid-cols-6 gap-3">
-                    <div className="md:col-span-2">
+                    <div className="grid grid-cols-1 gap-3">
                       <FieldSelect
                         name={`hf_${i}_icon`}
                         label="Icon"
-                        defaultValue={features[i]?.icon || "✨"}
+                        defaultValue={features[i]?.icon || "star"}
                         options={[
-                          { value: "✨", label: "✨ Sparkle" },
-                          { value: "🧼", label: "🧼 Clean" },
-                          { value: "📅", label: "📅 Booking" },
-                          { value: "💎", label: "💎 Premium" },
-                          { value: "🕒", label: "🕒 Time" },
-                          { value: "📍", label: "📍 Location" },
-                          { value: "⭐", label: "⭐ Rating" },
+                          { value: "star", label: "Star" },
+                          { value: "broom", label: "Clean (Broom)" },
+                          { value: "calendar-check", label: "Booking (Calendar)" },
+                          { value: "hand-sparkles", label: "Care (Hands)" },
+                          { value: "shield", label: "Trust (Shield)" },
+                          { value: "gem", label: "Premium (Gem)" },
+                          { value: "heart", label: "Love (Heart)" },
+                          { value: "user-check", label: "Professional (User-check)" },
+                          { value: "check-circle", label: "Approved (Check)" },
+                          { value: "magic", label: "Magic" },
                         ]}
                       />
-                    </div>
 
-                    <div className="md:col-span-2">
                       <Field
                         name={`hf_${i}_title`}
                         label="Title"
                         defaultValue={features[i]?.title || ""}
                       />
-                    </div>
 
-                    <div className="md:col-span-2">
                       <Field
                         name={`hf_${i}_text`}
                         label="Text"
                         defaultValue={features[i]?.text || ""}
                       />
                     </div>
-                  </div>
 
-                  <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 flex items-start gap-3">
-                    <div className="text-lg leading-none">
-                      {features[i]?.icon || "✨"}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold">
-                        {features[i]?.title || "—"}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {features[i]?.text || "—"}
+                    {/* Preview – без допълнителна карта */}
+                    <div className="mt-3 flex items-start gap-3 text-sm text-gray-700">
+                      <FaIconPreview
+                        name={features[i]?.icon || "star"}
+                        className="text-[18px] opacity-70 mt-[2px]"
+                      />
+                      <div>
+                        <div className="font-semibold">
+                          {features[i]?.title || "—"}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {features[i]?.text || "—"}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </Section>
 
-          {/* ===== Sections с ON/OFF суичове ===== */}
+          </Section>
 
           <Section
             title="Featured Services Section (Minimal)"
@@ -706,16 +730,8 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_services ?? true}
             toggleLabel='Показвай секцията „Услуги“ на публичния сайт'
           >
-            <Field
-              name="services_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.services_eyebrow || ""}
-            />
-            <Field
-              name="services_title"
-              label="Title"
-              defaultValue={s.services_title || ""}
-            />
+            <Field name="services_eyebrow" label="Eyebrow" defaultValue={s.services_eyebrow || ""} />
+            <Field name="services_title" label="Title" defaultValue={s.services_title || ""} />
             <TextArea
               name="services_subtitle"
               label="Subtitle"
@@ -731,21 +747,9 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_about ?? false}
             toggleLabel='Показвай секцията „За нас“'
           >
-            <Field
-              name="about_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.about_eyebrow || ""}
-            />
-            <Field
-              name="about_title"
-              label="Title"
-              defaultValue={s.about_title || ""}
-            />
-            <Field
-              name="about_cta_label"
-              label="CTA button label"
-              defaultValue={s.about_cta_label || ""}
-            />
+            <Field name="about_eyebrow" label="Eyebrow" defaultValue={s.about_eyebrow || ""} />
+            <Field name="about_title" label="Title" defaultValue={s.about_title || ""} />
+            <Field name="about_cta_label" label="CTA button label" defaultValue={s.about_cta_label || ""} />
             <TextArea
               name="about_text"
               label="About text (дълъг текст)"
@@ -761,16 +765,8 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_brands ?? true}
             toggleLabel='Показвай секцията „Марки“'
           >
-            <Field
-              name="brands_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.brands_eyebrow || ""}
-            />
-            <Field
-              name="brands_title"
-              label="Title"
-              defaultValue={s.brands_title || ""}
-            />
+            <Field name="brands_eyebrow" label="Eyebrow" defaultValue={s.brands_eyebrow || ""} />
+            <Field name="brands_title" label="Title" defaultValue={s.brands_title || ""} />
             <TextArea
               name="brands_subtitle"
               label="Subtitle"
@@ -786,30 +782,17 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_pricing ?? true}
             toggleLabel='Показвай секцията „Цени“'
           >
-            <Field
-              name="pricing_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.pricing_eyebrow || ""}
-            />
-            <Field
-              name="pricing_title"
-              label="Title"
-              defaultValue={s.pricing_title || ""}
-            />
+            <Field name="pricing_eyebrow" label="Eyebrow" defaultValue={s.pricing_eyebrow || ""} />
+            <Field name="pricing_title" label="Title" defaultValue={s.pricing_title || ""} />
             <TextArea
               name="pricing_subtitle"
               label="Subtitle"
               defaultValue={s.pricing_subtitle || ""}
               rows={3}
             />
-            <Field
-              name="pricing_badge"
-              label="Badge text (shown in pricing v2)"
-              defaultValue={s.pricing_badge || ""}
-            />
+            <Field name="pricing_badge" label="Badge text (shown in pricing v2)" defaultValue={s.pricing_badge || ""} />
           </Section>
 
-          {/* MAIN GALLERY – work + общи заглавия */}
           <Section
             title="Gallery section (Minimal)"
             subtitle="Основна галерия – снимки от работата + общи заглавия"
@@ -817,26 +800,16 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_gallery ?? true}
             toggleLabel='Показвай основната секция „Галерия“'
           >
-            <Field
-              name="gallery_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.gallery_eyebrow || ""}
-            />
-            <Field
-              name="gallery_title"
-              label="Title (главна галерия)"
-              defaultValue={s.gallery_title || ""}
-            />
+            <Field name="gallery_eyebrow" label="Eyebrow" defaultValue={s.gallery_eyebrow || ""} />
+            <Field name="gallery_title" label="Title (главна галерия)" defaultValue={s.gallery_title || ""} />
             <TextArea
               name="gallery_subtitle"
               label="Subtitle (главна галерия)"
               defaultValue={s.gallery_subtitle || ""}
               rows={3}
             />
-            {/* gallery_work_title го оставяме само в DB за съвместимост */}
           </Section>
 
-          {/* VENUE GALLERY – отделна секция и суич */}
           <Section
             title="Venue gallery section (Minimal)"
             subtitle='„Галерия на обекта“ – използва снимки с section "venue"'
@@ -844,16 +817,8 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_venue ?? true}
             toggleLabel='Показвай секцията „Галерия на обекта“'
           >
-            <Field
-              name="venue_gallery_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.venue_gallery_eyebrow || ""}
-            />
-            <Field
-              name="gallery_venue_title"
-              label="Title (Галерия на обекта)"
-              defaultValue={s.gallery_venue_title || ""}
-            />
+            <Field name="venue_gallery_eyebrow" label="Eyebrow" defaultValue={s.venue_gallery_eyebrow || ""} />
+            <Field name="gallery_venue_title" label="Title (Галерия на обекта)" defaultValue={s.gallery_venue_title || ""} />
             <TextArea
               name="venue_gallery_subtitle"
               label="Subtitle (Галерия на обекта)"
@@ -869,16 +834,8 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_reviews ?? true}
             toggleLabel='Показвай секцията „Отзиви“'
           >
-            <Field
-              name="reviews_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.reviews_eyebrow || ""}
-            />
-            <Field
-              name="reviews_title"
-              label="Title"
-              defaultValue={s.reviews_title || ""}
-            />
+            <Field name="reviews_eyebrow" label="Eyebrow" defaultValue={s.reviews_eyebrow || ""} />
+            <Field name="reviews_title" label="Title" defaultValue={s.reviews_title || ""} />
             <TextArea
               name="reviews_subtitle"
               label="Subtitle"
@@ -894,16 +851,8 @@ export default async function AdminSettings(props: {
             toggleDefaultChecked={s.show_contact ?? true}
             toggleLabel='Показвай секцията „Контакти“'
           >
-            <Field
-              name="contact_eyebrow"
-              label="Eyebrow"
-              defaultValue={s.contact_eyebrow || ""}
-            />
-            <Field
-              name="contact_title"
-              label="Title"
-              defaultValue={s.contact_title || ""}
-            />
+            <Field name="contact_eyebrow" label="Eyebrow" defaultValue={s.contact_eyebrow || ""} />
+            <Field name="contact_title" label="Title" defaultValue={s.contact_title || ""} />
             <TextArea
               name="contact_subtitle"
               label="Subtitle"
@@ -913,31 +862,37 @@ export default async function AdminSettings(props: {
           </Section>
 
           <Section title="Social + Maps" subtitle="Външни линкове">
-            <Field
-              name="google_maps_url"
-              label="Google Maps URL"
+            <TextArea
+              name="google_maps_embed"
+              label="Google Maps Embed (iframe или embed URL)"
               defaultValue={s.google_maps_url || ""}
+              rows={4}
             />
-            <Field
-              name="instagram_url"
-              label="Instagram URL"
-              defaultValue={s.instagram_url || ""}
-            />
-            <Field
-              name="facebook_url"
-              label="Facebook URL"
-              defaultValue={s.facebook_url || ""}
-            />
-            <Field
-              name="tiktok_url"
-              label="TikTok URL"
-              defaultValue={s.tiktok_url || ""}
-            />
-            <Field
-              name="youtube_url"
-              label="YouTube URL"
-              defaultValue={s.youtube_url || ""}
-            />
+
+            <div className="text-xs text-gray-500">
+              Как да вземеш embed:
+              <ol className="list-decimal ml-5 mt-1 space-y-1">
+                <li>Отвори локацията в Google Maps</li>
+                <li>
+                  Натисни <strong>Share</strong> (Споделяне)
+                </li>
+                <li>
+                  Избери таб <strong>Embed a map</strong>
+                </li>
+                <li>
+                  Копирай целия <code>{`<iframe ...></iframe>`}</code> код и го постави тук
+                </li>
+              </ol>
+              <div className="mt-2">
+                Може да поставиш и директно embed URL, който започва с{" "}
+                <code>https://www.google.com/maps/embed?</code>
+              </div>
+            </div>
+
+            <Field name="instagram_url" label="Instagram URL" defaultValue={s.instagram_url || ""} />
+            <Field name="facebook_url" label="Facebook URL" defaultValue={s.facebook_url || ""} />
+            <Field name="tiktok_url" label="TikTok URL" defaultValue={s.tiktok_url || ""} />
+            <Field name="youtube_url" label="YouTube URL" defaultValue={s.youtube_url || ""} />
           </Section>
 
           {/* Sticky Save Bar */}
@@ -945,12 +900,7 @@ export default async function AdminSettings(props: {
             <div className="rounded-2xl border border-gray-200 bg-white/95 backdrop-blur shadow-lg px-4 py-3 flex items-center justify-between gap-3">
               <div className="text-sm text-gray-600">
                 Public:{" "}
-                <Link
-                  className="underline"
-                  href={publicUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <Link className="underline" href={publicUrl} target="_blank" rel="noreferrer">
                   {publicUrl}
                 </Link>
               </div>
@@ -965,8 +915,7 @@ export default async function AdminSettings(props: {
         </form>
 
         <p className="text-sm text-gray-500">
-          * Засега достъпът е с <code>?key=</code>. По-късно го заменяме с
-          login.
+          * Засега достъпът е с <code>?key=</code>. По-късно го заменяме с login.
         </p>
       </div>
     </main>
@@ -1001,9 +950,7 @@ function Section({
         <div className="flex items-start justify-between gap-4 p-6 bg-white border-b border-gray-100">
           <div className="min-w-0">
             <div className="font-semibold text-gray-900">{title}</div>
-            {subtitle ? (
-              <div className="mt-1 text-xs text-gray-500">{subtitle}</div>
-            ) : null}
+            {subtitle ? <div className="mt-1 text-xs text-gray-500">{subtitle}</div> : null}
           </div>
 
           <div className="flex flex-col items-end gap-2 w-[140px]">
@@ -1015,12 +962,8 @@ function Section({
               />
             ) : null}
 
-            <div className="text-xs text-gray-400 group-open:hidden">
-              Expand
-            </div>
-            <div className="text-xs text-gray-400 hidden group-open:block">
-              Collapse
-            </div>
+            <div className="text-xs text-gray-400 group-open:hidden">Expand</div>
+            <div className="text-xs text-gray-400 hidden group-open:block">Collapse</div>
           </div>
         </div>
       </summary>
@@ -1044,17 +987,8 @@ function SectionToggle({
   const checked = defaultChecked ?? true;
 
   return (
-    <label
-      className="inline-flex items-center justify-end select-none"
-      title={label}
-      aria-label={label}
-    >
-      <input
-        type="checkbox"
-        name={name}
-        defaultChecked={checked}
-        className="peer sr-only"
-      />
+    <label className="inline-flex items-center justify-end select-none" title={label} aria-label={label}>
+      <input type="checkbox" name={name} defaultChecked={checked} className="peer sr-only" />
       <span
         className="
           relative inline-flex h-6 w-11 items-center rounded-full
@@ -1146,6 +1080,16 @@ function TextArea({
 
 /* ---------------- utils ---------------- */
 
+function pickColor(formData: FormData, name: string): string | null {
+  const fromPicker = (formData.get(name)?.toString() || "").trim();
+  const fromText = (formData.get(`${name}_text`)?.toString() || "").trim();
+
+  const v = fromText || fromPicker;
+  if (!v) return null;
+
+  return /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+}
+
 function sanitizeFileName(name: string) {
   return name
     .toLowerCase()
@@ -1168,44 +1112,78 @@ function storagePathFromPublicUrl(publicUrl: string, bucket: string) {
 function normalizeHeroFeaturesForAdmin(raw: any) {
   const fallback = [
     {
-      icon: "✨",
+      icon: "star",
       title: "Професионално отношение",
       text: "Фокус върху качество и детайл.",
     },
     {
-      icon: "🧼",
+      icon: "broom",
       title: "Чистота и комфорт",
       text: "Уютна атмосфера и грижа за клиента.",
     },
     {
-      icon: "📅",
+      icon: "calendar-check",
       title: "Лесно записване",
       text: "Онлайн букинг и бърза връзка.",
     },
   ];
 
+  // няма данни → връщаме default трите карти
   if (!Array.isArray(raw)) return fallback;
 
-  const cleaned = raw
-    .slice(0, 3)
-    .map((x) => ({
-      icon: (x?.icon || "").toString().trim() || "✨",
-      title: (x?.title || "").toString().trim(),
-      text: (x?.text || "").toString().trim(),
-    }));
+  const cleaned = raw.slice(0, 3).map((x) => ({
+    // важното: fallback icon е "star", не emoji
+    icon: (x?.icon || "").toString().trim() || "star",
+    title: (x?.title || "").toString().trim(),
+    text: (x?.text || "").toString().trim(),
+  }));
 
-  while (cleaned.length < 3) cleaned.push({ icon: "✨", title: "", text: "" });
+  // подсигуряваме 3 слота за UI
+  while (cleaned.length < 3) cleaned.push({ icon: "star", title: "", text: "" });
+
   return cleaned.slice(0, 3);
 }
+
 
 function buildHeroFeaturesFromForm(formData: FormData) {
   const out: Array<{ icon?: string; title: string; text: string }> = [];
   for (let i = 0; i < 3; i++) {
-    const icon =
-      (formData.get(`hf_${i}_icon`)?.toString() || "").trim() || "✨";
+    const icon = (formData.get(`hf_${i}_icon`)?.toString() || "").trim() || "star";
     const title = (formData.get(`hf_${i}_title`)?.toString() || "").trim();
     const text = (formData.get(`hf_${i}_text`)?.toString() || "").trim();
     if (title && text) out.push({ icon, title, text });
   }
   return out;
+}
+
+/**
+ * Accepts:
+ * - full <iframe ... src="..."></iframe>
+ * - plain embed URL (preferred)
+ * - plain google maps URL (fallback for "open in maps")
+ * Stores ONLY the URL string in DB.
+ */
+function extractGoogleMapsEmbedSrc(input: string): string | null {
+  const s = (input || "").trim();
+  if (!s) return null;
+
+  // If pasted full iframe, extract src=""
+  const m = s.match(/<iframe[^>]*\ssrc=["']([^"']+)["']/i);
+  if (m?.[1]) return normalizeGoogleMapsUrl(m[1].trim());
+
+  // If pasted plain URL
+  return normalizeGoogleMapsUrl(s);
+}
+
+function normalizeGoogleMapsUrl(url: string): string | null {
+  const u = (url || "").trim();
+  if (!u) return null;
+
+  // preferred: embed
+  if (/^https:\/\/www\.google\.[a-z.]+\/maps\/embed/i.test(u)) return u;
+
+  // fallback: normal maps link (frontend can render "open in maps")
+  if (/^https:\/\/(www\.)?google\.[a-z.]+\/maps/i.test(u)) return u;
+
+  return null;
 }

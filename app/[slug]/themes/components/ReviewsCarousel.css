@@ -1,50 +1,58 @@
+/* app/[slug]/themes/ReviewsCarousel.css */
+
 /* Wrapper */
 .rc-wrap {
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip; /* защита от микро overflow */
 }
 
 /*
-  ✅ Key fix:
-  - overflow hidden (no peeking)
-  - BUT add horizontal padding so shadow never reaches the clipping edge
+  Full-bleed viewport:
+  - без хоризонтален padding (edge-to-edge)
+  - overflow hidden за да няма "peeking"
+  - вертикален padding остава за дишане
 */
+
 .rc-viewport {
   position: relative;
   overflow: hidden;
-
-  /* vertical padding = shadow breathing room */
   padding-block: 22px;
 
-  /* ✅ IMPORTANT: horizontal gutter so shadow doesn't get clipped => no "cut line" */
-  padding-inline: 26px;
+  padding-inline: 62px;
 
   user-select: none;
 }
+
 
 /* Track */
 .rc-track {
   display: flex;
   will-change: transform;
+
+  /* ✅ КЛЮЧОВО: компенсираме padding-а на колоните,
+     за да започва първата карта от ръба (като WorkCarousel) */
+  margin-inline: -12px;
 }
 
-/* Each column wrapper */
+/* Each column wrapper (spacing between cards) */
 .rc-col {
   box-sizing: border-box;
-
-  /* spacing between cards */
   padding-inline: 12px;
 }
 
-/* Card: fixed height => all equal */
+/* Card */
 .rc-slide {
   box-sizing: border-box;
-  height: 240px; /* desktop */
+  height: 240px;
   border-radius: 18px;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.08);
 
-  /* minimal premium shadow */
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0, 0, 0, 0.05);
+  /* ✅ вместо box-shadow използваме drop-shadow → не се реже от overflow */
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.07))
+    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.05));
 
   padding: 28px;
   display: flex;
@@ -102,7 +110,7 @@
   overflow: hidden;
 }
 
-/* Arrows: outside viewport, not over cards */
+/* Arrows */
 .rc-arrow {
   position: absolute;
   top: 50%;
@@ -118,7 +126,7 @@
   display: grid;
   place-items: center;
 
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.10);
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.10));
 }
 
 .rc-arrow:hover {
@@ -130,35 +138,35 @@
 }
 
 .rc-arrow-left {
-  left: -10px;
+  left: 14px; /* ✅ на ръба, вътре в екрана */
 }
 
 .rc-arrow-right {
-  right: -10px;
+  right: 14px;
 }
 
 /* Mobile */
 @media (max-width: 767px) {
+
   .rc-viewport {
-    padding-inline: 18px; /* smaller gutter on mobile */
     padding-block: 18px;
+    padding-inline: 52px;
   }
 
-  .rc-col {
-    padding-inline: 10px;
-  }
-
+  .rc-col { padding-inline: 10px; }
+  .rc-track { margin-inline: -10px; }
+  
   .rc-arrow {
     width: 38px;
     height: 38px;
   }
 
   .rc-arrow-left {
-    left: -6px;
+    left: 10px;
   }
 
   .rc-arrow-right {
-    right: -6px;
+    right: 10px;
   }
 
   .rc-slide {
@@ -170,4 +178,48 @@
     -webkit-line-clamp: 5;
     line-clamp: 5;
   }
+}
+
+/* XL desktop: по-компактни карти */
+@media (min-width: 1280px) {
+  .rc-slide {
+    height: 220px;
+    padding: 22px;
+  }
+
+  .rc-author {
+    font-size: 18px;
+  }
+
+  .rc-text {
+    margin-top: 14px;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+
+  .rc-avatar {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+.rc-stars {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.rc-star {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.rc-star-filled {
+  fill: var(--rc-primary);
+  opacity: 0.95;
+}
+
+.rc-star-empty {
+  fill: rgba(0, 0, 0, 0.18);
 }

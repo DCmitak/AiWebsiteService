@@ -1,7 +1,8 @@
-// app/[slug]/themes/WorkCarousel.tsx
+// app\[slug]\themes\components\WorkCarousel.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Lightbox from "./Lightbox";
 
 type ImgItem = { id: string; image_url: string };
 
@@ -16,29 +17,31 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
     [items]
   );
   const len = baseItems.length;
+  const lbItems = useMemo(
+    () => baseItems.map((x) => ({ src: x.image_url, alt: "" })),
+    [baseItems]
+  );
+
 
   const [perView, setPerView] = useState(4);
   const [index, setIndex] = useState(0);
   const [withAnim, setWithAnim] = useState(true);
 
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const trackRef = useRef<HTMLDivElement | null>(null);
+  // Lightbox
+  const [lbOpen, setLbOpen] = useState(false);
+  const [lbIndex, setLbIndex] = useState(0);
 
   const autoplayRef = useRef<number | null>(null);
-  const hasInteractedRef = useRef(false);
+  const trackRef = useRef<HTMLDivElement | null>(null);
 
-  const isDraggingRef = useRef(false);
-  const startXRef = useRef(0);
-  const dragXRef = useRef(0);
-
-  // колко да са видимите карти
+  // responsive perView
   useEffect(() => {
     const calc = () => {
       const w = window.innerWidth;
       let pv = 1;
-      if (w >= 1024) pv = 4;      // десктоп: 4
-      else if (w >= 640) pv = 2;  // таблет: 2
-      else pv = 1;                // мобилен: 1
+      if (w >= 1024) pv = 4;
+      else if (w >= 640) pv = 2;
+      else pv = 1;
       setPerView(pv);
     };
     calc();
@@ -48,16 +51,19 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
 
   const canSlide = len > perView;
 
-  // клонове за безкраен loop
+  // infinite loop clones
   const extended = useMemo(() => {
-    if (!len) return [];
+    if (!len) return [] as Array<ImgItem & { __baseIndex: number }>;
     const k = Math.min(perView, len);
-    const head = baseItems.slice(0, k);
-    const tail = baseItems.slice(-k);
-    return [...tail, ...baseItems, ...head];
+
+    const head = baseItems.slice(0, k).map((it, i) => ({ ...it, __baseIndex: i }));
+    const tail = baseItems.slice(-k).map((it, i) => ({ ...it, __baseIndex: len - k + i }));
+    const mid = baseItems.map((it, i) => ({ ...it, __baseIndex: i }));
+
+    return [...tail, ...mid, ...head];
   }, [baseItems, len, perView]);
 
-  // reset index при промяна
+  // reset index when perView/len changes
   useEffect(() => {
     if (!len) {
       setIndex(0);
@@ -68,12 +74,11 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
     setIndex(k);
 
     requestAnimationFrame(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      trackRef.current?.offsetHeight;
       requestAnimationFrame(() => setWithAnim(true));
     });
   }, [perView, len]);
 
+  // autoplay helpers (PAUSE/RESUME вместо "kill")
   const clearAutoplay = () => {
     if (autoplayRef.current) {
       window.clearInterval(autoplayRef.current);
@@ -82,43 +87,34 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
   };
 
   const startAutoplay = () => {
-    if (!canSlide || hasInteractedRef.current) return;
+    if (!canSlide) return;
     clearAutoplay();
     autoplayRef.current = window.setInterval(() => {
       setIndex((i) => i + 1);
     }, autoplayMs);
   };
 
+  const restartAutoplay = () => {
+    if (!canSlide) return;
+    startAutoplay();
+  };
+
+  // старт при mount / промяна на условията
   useEffect(() => {
+    if (lbOpen) {
+      clearAutoplay();
+      return;
+    }
     startAutoplay();
     return () => clearAutoplay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSlide, autoplayMs]);
+  }, [canSlide, autoplayMs, lbOpen]);
 
-  const baseTranslatePct = perView ? (index * 100) / perView : 0;
-
-  const applyTransform = (dragPx = 0) => {
-    if (!trackRef.current) return;
-    trackRef.current.style.transform = `translate3d(-${baseTranslatePct}%,0,0) translate3d(${dragPx}px,0,0)`;
-  };
-
-  useEffect(() => {
-    if (!trackRef.current) return;
-    if (!isDraggingRef.current) applyTransform(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, perView]);
-
-  useEffect(() => {
-    if (!trackRef.current) return;
-    trackRef.current.style.transition = withAnim ? "transform 420ms ease" : "none";
-  }, [withAnim]);
-
+  // loop corrections
   const jumpNoAnim = (to: number) => {
     setWithAnim(false);
     setIndex(to);
     requestAnimationFrame(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      trackRef.current?.offsetHeight;
       requestAnimationFrame(() => setWithAnim(true));
     });
   };
@@ -137,81 +133,51 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
     }
   };
 
-  const markInteracted = () => {
-    hasInteractedRef.current = true;
-    clearAutoplay(); // след клик/drag autoplay спира
-  };
-
   const prev = () => {
     if (!canSlide) return;
-    markInteracted();
+    clearAutoplay(); // да не смени веднага след клика
     setIndex((i) => i - 1);
+    restartAutoplay();
   };
 
   const next = () => {
     if (!canSlide) return;
-    markInteracted();
+    clearAutoplay();
     setIndex((i) => i + 1);
+    restartAutoplay();
   };
 
-  // drag
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!canSlide) return;
-    if (e.pointerType === "mouse" && e.button !== 0) return;
+  // transform
+  const baseTranslatePct = perView ? (index * 100) / perView : 0;
 
-    markInteracted();
-    isDraggingRef.current = true;
-    startXRef.current = e.clientX;
-    dragXRef.current = 0;
+  useEffect(() => {
+    if (!trackRef.current) return;
+    trackRef.current.style.transition = withAnim ? "transform 420ms ease" : "none";
+  }, [withAnim]);
 
-    setWithAnim(false);
-    viewportRef.current?.setPointerCapture?.(e.pointerId);
+  useEffect(() => {
+    if (!trackRef.current) return;
+    trackRef.current.style.transform = `translate3d(-${baseTranslatePct}%,0,0)`;
+  }, [baseTranslatePct]);
+
+  // lightbox controls
+  const openLightbox = (baseIdx: number) => {
+    if (!len) return;
+    clearAutoplay(); // пауза докато е отворен
+    setLbIndex(Math.max(0, Math.min(baseIdx, len - 1)));
+    setLbOpen(true);
   };
 
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!isDraggingRef.current) return;
-    const dx = e.clientX - startXRef.current;
-    dragXRef.current = dx;
-    applyTransform(dx);
-  };
-
-  const endDrag = () => {
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
-
-    const dx = dragXRef.current;
-    dragXRef.current = 0;
-
-    const vw = viewportRef.current?.clientWidth || 1;
-    const slideW = vw / perView;
-    const threshold = slideW * 0.18;
-
-    setWithAnim(true);
-
-    if (dx <= -threshold) setIndex((i) => i + 1);
-    else if (dx >= threshold) setIndex((i) => i - 1);
-    else requestAnimationFrame(() => applyTransform(0));
+  const closeLightbox = () => {
+    setLbOpen(false);
+    // autoplay ще тръгне пак от useEffect([lbOpen])
   };
 
   if (!len) return null;
 
   return (
     <div className="wc-root">
-      <div
-        ref={viewportRef}
-        className="wc-viewport"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onPointerLeave={() => {
-          if (isDraggingRef.current) endDrag();
-        }}
-        style={{
-          cursor: canSlide ? (isDraggingRef.current ? "grabbing" : "grab") : "default",
-          touchAction: "pan-y",
-        }}
-      >
+      <div className="wc-viewport">
         <div ref={trackRef} className="wc-track" onTransitionEnd={onTransitionEnd}>
           {extended.map((img, i) => (
             <div
@@ -222,10 +188,15 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
                 maxWidth: `calc(100% / ${perView})`,
               }}
             >
-              <div className="wc-inner">
+              <button
+                type="button"
+                className="wc-inner"
+                onClick={() => openLightbox(img.__baseIndex)}
+                aria-label="Отвори снимка"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img.image_url} alt="" draggable={false} />
-              </div>
+              </button>
             </div>
           ))}
         </div>
@@ -233,23 +204,17 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
 
       {canSlide ? (
         <>
-          <button
-            type="button"
-            className="wc-arrow wc-arrow-left"
-            onClick={prev}
-            aria-label="Назад"
-          >
+          <button type="button" className="wc-arrow wc-arrow-left" onClick={prev} aria-label="Назад">
             ←
           </button>
-          <button
-            type="button"
-            className="wc-arrow wc-arrow-right"
-            onClick={next}
-            aria-label="Напред"
-          >
+          <button type="button" className="wc-arrow wc-arrow-right" onClick={next} aria-label="Напред">
             →
           </button>
         </>
+      ) : null}
+
+      {lbOpen ? (
+        <Lightbox items={lbItems} startIndex={lbIndex} onClose={closeLightbox} />
       ) : null}
 
       <style jsx>{`
@@ -257,33 +222,22 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
           position: relative;
           width: 100%;
           max-width: 100%;
+          overflow-x: clip;
         }
 
         .wc-viewport {
           overflow: hidden;
           width: 100%;
-          padding: 0 72px; /* въздух от краищата на екрана */
+          padding: 0;
           box-sizing: border-box;
-        }
-
-        @media (max-width: 1024px) {
-          .wc-viewport {
-            padding: 0 40px;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .wc-viewport {
-            padding: 0 16px;
-          }
         }
 
         .wc-track {
           display: flex;
           width: 100%;
+          will-change: transform;
         }
 
-        /* Въздух между картите, без да чупим ширината */
         .wc-slide {
           padding: 0 10px;
           box-sizing: border-box;
@@ -295,7 +249,11 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
           border-radius: 18px;
           overflow: hidden;
           background: #f3ece8;
-          aspect-ratio: 4 / 3; /* не квадрат – 4:3 */
+          aspect-ratio: 4 / 3;
+          border: none;
+          padding: 0;
+          display: block;
+          cursor: pointer;
         }
 
         .wc-inner img {
@@ -323,19 +281,14 @@ export default function WorkCarousel({ items, autoplayMs = 4000 }: Props) {
           line-height: 1;
           color: #111827;
           cursor: pointer;
+          z-index: 5;
         }
 
         .wc-arrow-left {
-          left: 24px;
+          left: 12px;
         }
         .wc-arrow-right {
-          right: 24px;
-        }
-
-        .wc-arrow:disabled {
-          opacity: 0.4;
-          cursor: default;
-          box-shadow: none;
+          right: 12px;
         }
 
         @media (max-width: 640px) {

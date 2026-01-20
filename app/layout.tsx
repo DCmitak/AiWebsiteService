@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Inter, Playfair_Display } from "next/font/google";
+import "@/lib/fontawesome";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
