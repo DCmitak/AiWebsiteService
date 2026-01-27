@@ -840,7 +840,7 @@ export default function MinimalTheme({
           </div>
           {showServices && hasServices ? (
             <a href="#services" className="underline">
-              Услуги
+              Услуги и
             </a>
           ) : null}
         </div>
